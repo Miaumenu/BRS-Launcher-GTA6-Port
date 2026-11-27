@@ -7,17 +7,17 @@
 
 ## 0. Estado do Git
 
-O repositório público no GitHub foi renomeado para **`Miaumenu/GambiarraLauncher`**. A pasta local ainda se chama `BRS-Launcher-GTA6-Port`. O PR #1 já foi mesclado em `main`. O branch `codex/brs-project-update` contém as alterações técnicas posteriores ao merge e deve ser publicado como um PR de acompanhamento; não faça push direto em `main`.
+O repositório público no GitHub usa o nome **`Miaumenu/GambiarraLauncher`**. O PR #1 já foi mesclado em `main`. A branch de acompanhamento contém as alterações técnicas posteriores ao merge; use um PR para levá-las a `main`.
 
 ```powershell
-cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\BRS-Launcher-GTA6-Port"; git status --short
+git status --short
 ```
 
 ---
 
 ## 1. Onde o código está
 
-Existe **uma única árvore** de código: esta, `BRS-Launcher-GTA6-Port/`.
+Existe **uma única árvore** de código: a raiz deste repositório.
 
 Antes havia cinco cópias do mesmo código no disco (`cool_fox-main/`, `GambiarraLauncher/main/`, e três árvores de experimento em `_SX-Local/Tools/Gambiarra-*-Test/`). Foram **apagadas** depois de confirmado que esta árvore contém todo o trabalho. Os logs que importavam foram preservados em `_SX-Local/6M-Development/Evidence/victory-run-logs-2026-11-26/`.
 
@@ -104,7 +104,7 @@ Corrigidos em 5 arquivos. Também: removido do `CHANGES.md` um item "em aberto" 
 
 `cargo fmt --all -- --check` — que é o passo do CI — **passa agora**. Reprovava em 25 arquivos de 4 crates, todos anteriores a esta sessão.
 
-O branch de acompanhamento é `codex/brs-project-update`. O repositório no GitHub usa `GambiarraLauncher`; a pasta local permanece `BRS-Launcher-GTA6-Port`. Os nomes `gambiarra-*` são usados nos pacotes e no CLI.
+O projeto e o repositório no GitHub usam o nome `GambiarraLauncher`. Os nomes `gambiarra-*` são usados nos pacotes e no CLI.
 
 ### 3.6 Disco
 
@@ -173,7 +173,7 @@ Motivo: **35% dos shaders do título (9.282 de 26.503) são mesh shaders** e a p
 4. **Confirmar as correções em uma segunda máquina.** A wave32 precisa de AMD pré-RDNA (RX 400/500 ou Vega).
 
 ```powershell
-cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\BRS-Launcher-GTA6-Port"; git remote -v
+git remote -v
 ```
 
 5. **Investigar os cinco compute** de `a descriptor read only as data`, começando por `GAMBIARRA_DESC_WHY=1`.
@@ -224,7 +224,7 @@ Variáveis úteis: `GAMBIARRA_KEYS=40:Enter` (aperta teclas sem precisar de foco
 
 | decisão | situação |
 |---|---|
-| **Nome do projeto** | decidido: `GambiarraLauncher`; o dono já renomeou o repositório no GitHub. A pasta local ainda tem o nome antigo `BRS-Launcher-GTA6-Port`. |
+| **Nome do projeto** | decidido: `GambiarraLauncher`; o repositório no GitHub e a árvore ativa usam esse nome. |
 | **Ignorar tudo menos esta pasta** | resolvido de fato: a pasta-mãe (`MEU PROPIO LAUNCHER`) **não é um repositório git**, então o `.gitignore` dela não tem efeito. O que vale é o deste repositório, que já ignora `/inspiration/` (linha 96). |
 | **Trazer do `_SX-Local` o que ajuda** | pedido. Candidatos reais: o laudo de shaders, os logs preservados, a sonda `d3d12-capabilities.exe`, o loop instrumentado. O resto (Ghidra, assinaturas, análise do REA, `Private/`) é análise do binário e **não ajuda o launcher**. |
 | **Separar o launcher do Gambiarra** | pedido, para depois. |
