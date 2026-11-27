@@ -932,11 +932,13 @@ pub(crate) static STALE: [std::sync::atomic::AtomicU64; 5] =
 /// until run 188.
 fn stale_rule() -> Rule {
     static RULE: std::sync::OnceLock<Rule> = std::sync::OnceLock::new();
-    *RULE.get_or_init(|| match std::env::var("GAMBIARRA_STALE_TEXTURES").as_deref() {
-        Ok("0") => Rule::Never,
-        Ok("overlap") => Rule::Overlap,
-        _ => Rule::Start,
-    })
+    *RULE.get_or_init(
+        || match std::env::var("GAMBIARRA_STALE_TEXTURES").as_deref() {
+            Ok("0") => Rule::Never,
+            Ok("overlap") => Rule::Overlap,
+            _ => Rule::Start,
+        },
+    )
 }
 
 /// The runtime mapped or unmapped title memory `[at, at + len)`, or is
@@ -3417,8 +3419,8 @@ impl HostHeap {
     /// `GAMBIARRA_SLOT_HOLDS=0`: only the list holds it, as before.
     pub(crate) fn constant_at(&self, index: u32, buffer: &ID3D12Resource, gpu: u64, size: u32) {
         static HOLDS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let holds =
-            *HOLDS.get_or_init(|| std::env::var_os("GAMBIARRA_SLOT_HOLDS").is_none_or(|v| v != "0"));
+        let holds = *HOLDS
+            .get_or_init(|| std::env::var_os("GAMBIARRA_SLOT_HOLDS").is_none_or(|v| v != "0"));
         let Some(host) = host() else { return };
         let desc = D3D12_CONSTANT_BUFFER_VIEW_DESC {
             BufferLocation: gpu,

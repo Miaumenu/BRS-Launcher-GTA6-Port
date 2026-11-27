@@ -1178,9 +1178,8 @@ mod tests {
     fn dxc() -> Option<PathBuf> {
         let dxc = match std::env::var_os("GAMBIARRA_PC_DXC") {
             Some(p) => PathBuf::from(p),
-            None => {
-                gambiarra_shader::emit::validator::Validator::default_path()?.with_file_name("dxc.exe")
-            }
+            None => gambiarra_shader::emit::validator::Validator::default_path()?
+                .with_file_name("dxc.exe"),
         };
         dxc.exists().then_some(dxc)
     }

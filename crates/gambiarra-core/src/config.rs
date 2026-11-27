@@ -145,7 +145,9 @@ fn default_dir(name: &str) -> Result<PathBuf> {
         .or_else(|| std::env::var_os("XDG_CACHE_HOME"))
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-        .context("cannot determine a user directory; set GAMBIARRA_CACHE_DIR and GAMBIARRA_DATA_DIR")?;
+        .context(
+            "cannot determine a user directory; set GAMBIARRA_CACHE_DIR and GAMBIARRA_DATA_DIR",
+        )?;
     Ok(base.join("gambiarra").join(name))
 }
 

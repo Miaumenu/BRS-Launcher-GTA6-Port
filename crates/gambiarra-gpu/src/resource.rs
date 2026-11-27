@@ -1244,7 +1244,8 @@ struct Hosted {
 pub(crate) fn held_only() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
-        std::env::var_os("GAMBIARRA_HELD_LEVELS").is_none_or(|v| v != "0") && !crate::tiles::wanted()
+        std::env::var_os("GAMBIARRA_HELD_LEVELS").is_none_or(|v| v != "0")
+            && !crate::tiles::wanted()
     })
 }
 
@@ -1437,7 +1438,8 @@ pub(crate) fn alias_of(this: This) -> Option<This> {
         return None;
     }
     static WHOLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let whole = *WHOLE.get_or_init(|| std::env::var_os("GAMBIARRA_ALIAS_COPY").is_none_or(|v| v != "1"));
+    let whole =
+        *WHOLE.get_or_init(|| std::env::var_os("GAMBIARRA_ALIAS_COPY").is_none_or(|v| v != "1"));
     let r = resource(this);
     // A level count of 0 asks for a full chain: not counted here.
     let one = |d: &ResourceDesc| {
@@ -2166,8 +2168,8 @@ pub(crate) fn let_go_idle() {
     const PART: usize = 8192;
     static FROM: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     static WHOLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let whole =
-        *WHOLE.get_or_init(|| std::env::var_os("GAMBIARRA_TEXTURE_SWEEP").is_some_and(|v| v == "whole"));
+    let whole = *WHOLE
+        .get_or_init(|| std::env::var_os("GAMBIARRA_TEXTURE_SWEEP").is_some_and(|v| v == "whole"));
     let part = if most != u64::MAX {
         0
     } else if whole || idle_ms < 60_000 {
@@ -3114,7 +3116,9 @@ pub(crate) fn texture_kind(this: This) -> Option<(u64, u32, u32)> {
 /// memory and the bytes that layout takes, for `crate::texback`; `None` for
 /// a buffer or a texture with planes.
 #[cfg(windows)]
-pub(crate) fn title_texture(this: This) -> Option<(gambiarra_formats::texture::Layout, usize, usize)> {
+pub(crate) fn title_texture(
+    this: This,
+) -> Option<(gambiarra_formats::texture::Layout, usize, usize)> {
     if this.is_null() {
         return None;
     }
@@ -3180,7 +3184,8 @@ pub(crate) fn texture_at(address: u64, desc: &[u32; 14]) -> Option<This> {
     static KEPT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let raw = *desc;
     let mut key = *desc;
-    if !*KEPT.get_or_init(|| std::env::var_os("GAMBIARRA_PLACED_FILLER").is_some_and(|v| v == "1")) {
+    if !*KEPT.get_or_init(|| std::env::var_os("GAMBIARRA_PLACED_FILLER").is_some_and(|v| v == "1"))
+    {
         key[1] = 0;
         key[13] = 0;
     }

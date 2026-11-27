@@ -301,7 +301,10 @@ impl Io {
     fn chosen() -> Io {
         static CHOSEN: OnceLock<Io> = OnceLock::new();
         *CHOSEN.get_or_init(|| {
-            let io = match std::env::var("GAMBIARRA_DSTORAGE_IO").as_deref().map(str::trim) {
+            let io = match std::env::var("GAMBIARRA_DSTORAGE_IO")
+                .as_deref()
+                .map(str::trim)
+            {
                 Ok("one") => Io::One,
                 Ok("handles") => Io::Handles,
                 Ok("overlapped") => Io::Overlapped,

@@ -57,11 +57,13 @@ pub(crate) fn on() -> bool {
 /// not landed), 2 (landed too).
 fn stage() -> u8 {
     static STAGE: OnceLock<u8> = OnceLock::new();
-    *STAGE.get_or_init(|| match std::env::var("GAMBIARRA_PICKED_WRITES").as_deref() {
-        Ok("1") => 1,
-        Ok("2") => 2,
-        _ => 0,
-    })
+    *STAGE.get_or_init(
+        || match std::env::var("GAMBIARRA_PICKED_WRITES").as_deref() {
+            Ok("1") => 1,
+            Ok("2") => 2,
+            _ => 0,
+        },
+    )
 }
 
 /// Whether what is found is landed.

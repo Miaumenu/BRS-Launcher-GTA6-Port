@@ -380,11 +380,13 @@ fn windows() -> bool {
 /// to wait that do not pass through its lists' methods is not known.
 fn batches() -> u8 {
     static ON: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| match std::env::var("GAMBIARRA_INDIRECT_BATCH").as_deref() {
-        Ok("0") => 0,
-        Ok("2") => 2,
-        _ => 1,
-    })
+    *ON.get_or_init(
+        || match std::env::var("GAMBIARRA_INDIRECT_BATCH").as_deref() {
+            Ok("0") => 0,
+            Ok("2") => 2,
+            _ => 1,
+        },
+    )
 }
 
 /// The records clamped by the pass opened last ([`batches`]).
@@ -1771,7 +1773,11 @@ impl State {
             let writes = (t.stores || !write_skip())
                 && !crate::pipeline::builder_quarantined(self.pipeline as This);
             // Title memory by address: what the shader finds it by.
-            let memory = if t.host.root_srvs.contains(&gambiarra_shader::emit::SLOT_MEMORY) {
+            let memory = if t
+                .host
+                .root_srvs
+                .contains(&gambiarra_shader::emit::SLOT_MEMORY)
+            {
                 // Only through a store by address: what it stores through
                 // views is declared with them.
                 let use_ = if crate::pipeline::is_builder(self.pipeline as This)
@@ -2572,7 +2578,9 @@ impl State {
         room: bool,
     ) {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if !*ON.get_or_init(|| std::env::var_os("GAMBIARRA_CARD_ACCOUNTING").is_some_and(|v| v == "1")) {
+        if !*ON
+            .get_or_init(|| std::env::var_os("GAMBIARRA_CARD_ACCOUNTING").is_some_and(|v| v == "1"))
+        {
             return;
         }
         // When the next line is due (0: none yet, the card has had room).
@@ -2666,7 +2674,8 @@ impl State {
         mut sync: Option<&mut BakeSync>,
     ) -> bool {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if !*ON.get_or_init(|| std::env::var_os("GAMBIARRA_HEAP_TEXTURES").is_none_or(|v| v != "0")) {
+        if !*ON.get_or_init(|| std::env::var_os("GAMBIARRA_HEAP_TEXTURES").is_none_or(|v| v != "0"))
+        {
             return true;
         }
         let memory = crate::host::host().and_then(|h| h.video_memory());
@@ -3394,7 +3403,8 @@ impl State {
                     "a dispatch counted in threads that is not the structure builder's"
                 );
             }
-            if let Some((param, word)) = compute_word(p, gambiarra_shader::emit::USER_DISPATCH_THREADS_X)
+            if let Some((param, word)) =
+                compute_word(p, gambiarra_shader::emit::USER_DISPATCH_THREADS_X)
             {
                 // SAFETY: an open list; the root signature has the word.
                 unsafe {

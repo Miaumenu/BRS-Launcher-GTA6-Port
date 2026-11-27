@@ -20,11 +20,11 @@ pub mod modules;
 mod registry;
 pub mod runtime;
 
-pub use host::HostPolicy;
-pub use registry::{HleExport, HleModule, registry};
 pub use gambiarra_gpu::console;
 #[cfg(all(windows, feature = "diagnostics"))]
 pub use gambiarra_gpu::replay;
+pub use host::HostPolicy;
+pub use registry::{HleExport, HleModule, registry};
 
 #[cfg(windows)]
 pub use gambiarra_gpu::pipeline::known as known_pipelines;

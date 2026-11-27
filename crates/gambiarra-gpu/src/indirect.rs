@@ -1087,7 +1087,8 @@ void main() {
     #[test]
     #[ignore]
     fn raw_loads_past_views() {
-        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some()) else {
+        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some())
+        else {
             return;
         };
         const SOURCE: &str = r#"
@@ -1312,7 +1313,8 @@ void main(uint3 id : SV_DispatchThreadID, uint g : SV_GroupIndex) {
     #[test]
     #[ignore]
     fn descriptors_written_under_readers() {
-        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some()) else {
+        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some())
+        else {
             return;
         };
         let seconds = std::env::var("GAMBIARRA_BENCH_S")
@@ -1604,7 +1606,8 @@ void main(uint3 g : SV_GroupID, uint i : SV_GroupIndex) {
     #[test]
     #[ignore]
     fn textures_read_in_another_dimension() {
-        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some()) else {
+        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some())
+        else {
             return;
         };
         const SOURCE: &str = r#"
@@ -1808,7 +1811,8 @@ void main(uint3 t : SV_DispatchThreadID) {
     #[test]
     #[ignore]
     fn loads_far_outside_views() {
-        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some()) else {
+        let Some(mut gpu) = WarpHarness::on(std::env::var_os("GAMBIARRA_BENCH_WARP").is_some())
+        else {
             return;
         };
         const SOURCE: &str = r#"

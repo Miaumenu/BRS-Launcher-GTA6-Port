@@ -236,7 +236,10 @@ pub(super) fn wrap_own() {
     find_real();
     // SAFETY: our own module's mapped image.
     let changed = unsafe { wrap_imports() };
-    tracing::info!(changed, "the timeline's wrappers are in (GAMBIARRA_TIMELINE)");
+    tracing::info!(
+        changed,
+        "the timeline's wrappers are in (GAMBIARRA_TIMELINE)"
+    );
 }
 
 fn find_real() {

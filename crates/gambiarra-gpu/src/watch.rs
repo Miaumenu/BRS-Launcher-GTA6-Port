@@ -1160,7 +1160,9 @@ fn publish(pages: &[usize]) {
 /// 111 ms a frame of all threads' time went into waiting for that lock.
 fn known_holes() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("GAMBIARRA_KNOWN_HOLES").is_none_or(|v| v != "0") && light())
+    *ON.get_or_init(|| {
+        std::env::var_os("GAMBIARRA_KNOWN_HOLES").is_none_or(|v| v != "0") && light()
+    })
 }
 
 /// Whether `block` lies in a placeholder: a reservation in which pages come
@@ -1798,7 +1800,8 @@ fn guard(start: usize, end: usize) -> Option<Vec<usize>> {
     // `GAMBIARRA_GUARD_ASK=1` asks every time, as before.
     static ASK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let (first, last) = (start / BLOCK, end.div_ceil(BLOCK));
-    let known = !*ASK.get_or_init(|| std::env::var_os("GAMBIARRA_GUARD_ASK").is_some_and(|v| v == "1"))
+    let known = !*ASK
+        .get_or_init(|| std::env::var_os("GAMBIARRA_GUARD_ASK").is_some_and(|v| v == "1"))
         && (PROTECTED.any(first, first + 1) || {
             let g = guards_timed();
             g.protected.contains(first) || g.absent.contains(first)
@@ -2294,15 +2297,18 @@ impl Drop for KernelWrite {
 /// queue in an earlier form: still asked for by name.)
 pub(crate) fn page_writes() -> u8 {
     static MODE: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-    *MODE.get_or_init(
-        || match std::env::var("GAMBIARRA_PAGE_WRITES").as_deref().map(str::trim) {
+    *MODE.get_or_init(|| {
+        match std::env::var("GAMBIARRA_PAGE_WRITES")
+            .as_deref()
+            .map(str::trim)
+        {
             Ok("0") => 0,
             Ok("1") => 3,
             Ok("slots") => 2,
             Ok("all") => 7,
             _ => 1,
-        },
-    )
+        }
+    })
 }
 
 /// Since the start: writes into physical pages through the runtime's own

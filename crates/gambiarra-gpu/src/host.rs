@@ -180,7 +180,8 @@ pub(crate) fn vram_keep(budget: u64, used: u64) -> (u64, u64) {
 /// `GAMBIARRA_TEXTURE_KEEP=0`: 5 s there too, as before.
 pub(crate) fn vram_idle_ms(video_memory: Option<[u64; 4]>) -> u64 {
     static KEEP: OnceLock<bool> = OnceLock::new();
-    let keep = *KEEP.get_or_init(|| std::env::var_os("GAMBIARRA_TEXTURE_KEEP").is_none_or(|v| v != "0"));
+    let keep =
+        *KEEP.get_or_init(|| std::env::var_os("GAMBIARRA_TEXTURE_KEEP").is_none_or(|v| v != "0"));
     vram_idle_for(video_memory, keep)
 }
 
@@ -880,9 +881,8 @@ pub(crate) fn fail(what: std::fmt::Arguments) -> ! {
         }
         match host.log_messages() {
             Some(first) => text.push_str(&format!("; debug layer: {first}")),
-            None if host.messages.is_none() => {
-                text.push_str("; a diagnostics build with GAMBIARRA_D3D12_DEBUG=1 names the command")
-            }
+            None if host.messages.is_none() => text
+                .push_str("; a diagnostics build with GAMBIARRA_D3D12_DEBUG=1 names the command"),
             None => {}
         }
     }
@@ -4123,7 +4123,9 @@ fn declared_writes(runs: &[&HostList]) -> Vec<Declared> {
 /// runtime, the read requests that fail (with 2: every request).
 pub(crate) fn walls_trace() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("GAMBIARRA_WALLS_TRACE").is_some_and(|v| v == "1" || v == "2"))
+    *ON.get_or_init(|| {
+        std::env::var_os("GAMBIARRA_WALLS_TRACE").is_some_and(|v| v == "1" || v == "2")
+    })
 }
 
 /// After `list` has run: the texels its read-backs copied into host

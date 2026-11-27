@@ -94,7 +94,8 @@ pub(crate) fn frame() {
         let file = std::env::var("GAMBIARRA_FAULT_BOOK")
             .ok()
             .filter(|f| !f.is_empty())?;
-        let times = std::env::var("GAMBIARRA_FAULT_BOOK_AT").unwrap_or_else(|_| "150,210,270".into());
+        let times =
+            std::env::var("GAMBIARRA_FAULT_BOOK_AT").unwrap_or_else(|_| "150,210,270".into());
         Some((
             file,
             times

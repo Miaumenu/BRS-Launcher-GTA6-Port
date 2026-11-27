@@ -7,7 +7,8 @@ fn a_title_dll_that_does_not_prepare_is_named() {
     let cache = tempfile::tempdir().unwrap();
     std::fs::write(title.path().join("broken.dll"), b"MZ not a PE").unwrap();
     let wanted = |_: &str| true;
-    let loaded = gambiarra_loader::load_title_dll("broken.dll", title.path(), cache.path(), &wanted);
+    let loaded =
+        gambiarra_loader::load_title_dll("broken.dll", title.path(), cache.path(), &wanted);
     let Err(error) = loaded else {
         panic!("a DLL that is not a PE loaded");
     };
