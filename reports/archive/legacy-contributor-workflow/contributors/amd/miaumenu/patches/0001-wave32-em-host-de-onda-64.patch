@@ -9,8 +9,7 @@ Medido na Radeon RX 550 (GCN 4): avisos "wave lane count of 32" 509 -> 3;
 pipelines recusados com E_INVALIDARG 298 -> 2.
 
 Árvore-alvo: crates com o prefixo `gambiarra-` (gerado de GambiarraLauncher
-em 27/11/2026). Em árvore com o prefixo antigo `sixm-` ou `victory-`, troque
-os caminhos.
+em 27/11/2026). Em árvores com outros prefixos, ajuste os caminhos.
 
 Aplicar:  git apply 0001-wave32-em-host-de-onda-64.patch
 
