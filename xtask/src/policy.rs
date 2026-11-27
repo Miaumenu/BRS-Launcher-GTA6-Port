@@ -23,7 +23,7 @@ const ALLOWED_NAMES: &[&str] = &[
     ".gitattributes",
     ".editorconfig",
     "CODEOWNERS",
-    ".sixm-root",
+    ".gambiarra-root",
     "pre-commit",
     "LICENSE",
     "LICENSE-MIT",
@@ -32,7 +32,7 @@ const ALLOWED_NAMES: &[&str] = &[
 
 /// Paths explicitly exempted, with a reason. Keep this empty if at all possible.
 const EXCEPTIONS: &[(&str, &str)] = &[(
-    "crates/sixm-formats/src/bcpack-tables.bin",
+    "crates/gambiarra-formats/src/bcpack-tables.bin",
     "the BCPack format's constant tables: nothing decodes without them and they cannot be derived (owner's decision, 2026-11-23; docs/asset-policy.md)",
 )];
 

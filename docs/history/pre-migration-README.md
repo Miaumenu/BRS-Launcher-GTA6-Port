@@ -1,4 +1,4 @@
-# SixMultiVersion
+# GambiarraLauncher
 
 Camada de compatibilidade para rodar um título Xbox Series nativamente no Windows, e o esforço coletivo para descobrir **em quais máquinas ela realmente funciona**.
 
@@ -23,11 +23,11 @@ Não é um emulador. O Xbox Series X é x86-64 AMD, a mesma arquitetura de um PC
 É da mesma família do Wine/Proton, não do Xenia.
 
 ```
-cargo build --profile diag -p sixm-multiversion --features diagnostics
-.\SixM-MultiVersion.cmd pareto-residency
+cargo build --profile diag -p gambiarra-cli --features diagnostics
+.\GambiarraLauncher.cmd pareto-residency
 ```
 
-O jogo não vem no repositório, não vai vir, e nenhum arquivo dele pode ser commitado aqui. Você usa o seu próprio dump, apontado por `SIXM_GAME_DIR`.
+O jogo não vem no repositório, não vai vir, e nenhum arquivo dele pode ser commitado aqui. Você usa o seu próprio dump, apontado por `GAMBIARRA_GAME_DIR`.
 
 ---
 
@@ -57,7 +57,7 @@ O tradutor não é o gargalo. As 196 falhas dos geometry shaders foram corrigida
 Reproduza na sua máquina:
 
 ```powershell
-.\main\target\diag\sixm-multiversion.exe translate --list "<seu dump>\shaders.rpf"
+.\main\target\diag\gambiarra-cli.exe translate --list "<seu dump>\shaders.rpf"
 ```
 
 Leva uns 4 minutos, não abre o jogo e não depende de GPU — é o jeito rápido de medir.
@@ -66,6 +66,6 @@ Leva uns 4 minutos, não abre o jogo e não depende de GPU — é o jeito rápid
 
 ## Origem e licença
 
-Deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob **GPL-3.0-or-later**. Os nomes `victory*` / `VICTORY_*` foram trocados por `sixm*` / `SIXM_*` neste fork; o código, a licença e a autoria originais continuam sendo de lá.
+Deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob **GPL-3.0-or-later**. Os nomes `victory*` / `VICTORY_*` foram trocados por `gambiarra*` / `GAMBIARRA_*` neste fork; o código, a licença e a autoria originais continuam sendo de lá.
 
 Tudo que você contribuir aqui entra sob a mesma licença.

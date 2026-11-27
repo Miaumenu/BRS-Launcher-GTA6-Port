@@ -12,11 +12,11 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($CliPath)) {
-    $CliPath = Join-Path $repoRoot 'target\release\sixm-multiversion.exe'
+    $CliPath = Join-Path $repoRoot 'target\release\gambiarra-cli.exe'
 }
 
 if (-not (Test-Path -LiteralPath $CliPath -PathType Leaf)) {
-    throw "CLI não encontrado em '$CliPath'. Compile sixm-multiversion ou informe -CliPath."
+    throw "CLI não encontrado em '$CliPath'. Compile gambiarra-cli ou informe -CliPath."
 }
 
 $resolvedPaths = foreach ($item in $Path) {

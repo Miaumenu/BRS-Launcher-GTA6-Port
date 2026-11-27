@@ -33,7 +33,7 @@ Execute antes de abrir o PR:
 
 Clippy reports a known baseline of warnings in the inherited GPU prototype. The CI keeps these visible but does not treat them as errors yet; Rust compile errors and failing tests still block a PR. We can restore `-D warnings` after the baseline warnings are resolved.
 
-The GitHub-hosted Windows runner compiles the `sixm-gpu` and `sixm-shader` test targets but does not execute their device-dependent tests: virtual adapters do not provide a stable substitute for the project's supported GPU environment, and failures vary by adapter. The full suite runs in `.github/workflows/gpu-validation.yml` on a trusted, configured GPU runner. Tests in the other workspace packages run in regular CI. A developer with a suitable local adapter can run the complete `cargo test --workspace --locked` suite.
+The GitHub-hosted Windows runner compiles the `gambiarra-gpu` and `gambiarra-shader` test targets but does not execute their device-dependent tests: virtual adapters do not provide a stable substitute for the project's supported GPU environment, and failures vary by adapter. The full suite runs in `.github/workflows/gpu-validation.yml` on a trusted, configured GPU runner. Tests in the other workspace packages run in regular CI. A developer with a suitable local adapter can run the complete `cargo test --workspace --locked` suite.
 
 ## Arquivos que não entram
 

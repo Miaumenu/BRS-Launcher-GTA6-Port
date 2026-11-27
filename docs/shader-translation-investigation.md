@@ -1,10 +1,10 @@
-# SixMultiVersion + GTA VI (Scarlett) — o que já se sabe
+# GambiarraLauncher + GTA VI (Scarlett) — o que já se sabe
 
 **Última atualização:** 27/11/2026
-**Escopo:** rodar o `game_scarlett_master.exe` (build Series 1.0.2.1) no Windows através do SixMultiVersion, o que funciona, o que não funciona, e o que é limite de hardware.
+**Escopo:** rodar o `game_scarlett_master.exe` (build Series 1.0.2.1) no Windows através do GambiarraLauncher, o que funciona, o que não funciona, e o que é limite de hardware.
 
 > **Nota de nomes.** Em 27/11/2026 o projeto foi renomeado de `victory*` / `VICTORY_*`
-> para `sixm*` / `SIXM_*`. Este documento usa os nomes novos. As **linhas de log citadas
+> para `gambiarra*` / `GAMBIARRA_*`. Este documento usa os nomes novos. As **linhas de log citadas
 > aqui são anteriores à renomeação** e foram geradas por binários que ainda imprimiam
 > `victory_gpu::...`; elas aparecem com os nomes atuais para não confundir quem lê o código
 > de hoje, mas um log antigo no disco vai mostrar a grafia antiga.
@@ -24,13 +24,13 @@ Este documento é para ser **continuado por outras pessoas**. Cada achado traz a
 | Chegar ao mundo / gameplay | **não** — barrado por hardware |
 | Mesh shaders (35% dos shaders do jogo) | **impossível nesta máquina** |
 
-A conclusão central: **o tradutor do SixMultiVersion não é o gargalo.** Ele converte quase todo o jogo. O que impede o gameplay na máquina de referência é a GPU não ter mesh shaders nem Shader Model 6.6.
+A conclusão central: **o tradutor do GambiarraLauncher não é o gargalo.** Ele converte quase todo o jogo. O que impede o gameplay na máquina de referência é a GPU não ter mesh shaders nem Shader Model 6.6.
 
 ---
 
 ## 2. Máquina de referência
 
-Sonda: `_SX-Local/Tools/SixM-diagnostics/d3d12-capabilities.exe`
+Sonda: `_SX-Local/Tools/Gambiarra-diagnostics/d3d12-capabilities.exe`
 
 ```
 Adapter 0: Radeon RX550/550 Series | dedicated VRAM: 2027 MiB | software: no
@@ -41,7 +41,7 @@ Adapter 2: Microsoft Basic Render Driver (WARP) | HighestShaderModel: 6.2
 
 - GPU: **Radeon RX 550 (Polaris / GCN 4)**, 2 GB. `WaveLaneCountMin = WaveLaneCountMax = 64` (só ondas de 64 lanes).
 - CPU: AMD Ryzen 7 3700X. SO: Windows 10.0.19045.
-- O SixMultiVersion exige, pelo próprio README: Windows x64, CPU com AVX2, GPU D3D12 com **Shader Model 6.6 e mesh shaders**.
+- O GambiarraLauncher exige, pelo próprio README: Windows x64, CPU com AVX2, GPU D3D12 com **Shader Model 6.6 e mesh shaders**.
 
 **A máquina de referência não atende os requisitos.** Isso precisa ficar claro em qualquer leitura dos resultados abaixo: muita coisa que parece falha do software é a placa.
 
@@ -54,7 +54,7 @@ O Xbox Series X, por comparação, é RDNA 2: ondas de 32 **e** de 64, mesh shad
 ### 3.1 Compilar
 
 ```powershell
-cargo build --profile diag -p SixMultiVersion --features diagnostics   # target\diag\SixMultiVersion.exe
+cargo build --profile diag -p GambiarraLauncher --features diagnostics   # target\diag\GambiarraLauncher.exe
 ```
 
 A toolchain Rust portátil fica em `_SX-Local/Tools/rust-toolchain` (`CARGO_HOME`/`RUSTUP_HOME` apontando para `cargo/` e `rustup/`). O projeto fixa Rust 1.98.1 + MSVC.
@@ -64,28 +64,28 @@ A toolchain Rust portátil fica em `_SX-Local/Tools/rust-toolchain` (`CARGO_HOME
 ### 3.2 Rodar o jogo com instrumentação
 
 ```powershell
-python _SX-Local\Tools\SixM-loop\SIXM_loop.py --label teste --dred --timing
+python _SX-Local\Tools\Gambiarra-loop\GAMBIARRA_loop.py --label teste --dred --timing
 ```
 
-`SIXM_loop.py` é uma ferramenta local fora deste repositório. Ela lança o jogo, segue o stderr ao vivo, classifica cada linha, para sozinha no primeiro frame do mundo / erro fatal / timeout, e escreve um relatório de ~40 linhas em vez de 1 MB de log. Ela usa:
+`GAMBIARRA_loop.py` é uma ferramenta local fora deste repositório. Ela lança o jogo, segue o stderr ao vivo, classifica cada linha, para sozinha no primeiro frame do mundo / erro fatal / timeout, e escreve um relatório de ~40 linhas em vez de 1 MB de log. Ela usa:
 
 | variável | para quê |
 |---|---|
-| `SIXM_KEYS=40:Enter,55:Enter` | aperta teclas nos segundos dados, **sem precisar de foco** (injeta num pad virtual). É assim que se passa da tela de início. |
-| `SIXM_CAPTURE=<dir>` | salva os frames apresentados em PNG (meio tamanho) |
-| `SIXM_CAPTURE_WORLD=0,2,8` | marca o **primeiro frame que roda 500 draws** — é o sinal de "o mundo começou a renderizar". Sem essa variável a mensagem não sai. |
-| `SIXM_D3D12_DEBUG=1` | camada de debug do D3D12 |
-| `SIXM_D3D12_DRED=1` | na falha de GPU, a alocação atingida e os comandos em voo |
-| `SIXM_GPU_TIMING=1` | na remoção do device, nomeia a lista e todos os comandos dela |
-| `SIXM_SKIP_PIPELINES=<hash>` | pula um pipeline específico, para isolar um culpado |
+| `GAMBIARRA_KEYS=40:Enter,55:Enter` | aperta teclas nos segundos dados, **sem precisar de foco** (injeta num pad virtual). É assim que se passa da tela de início. |
+| `GAMBIARRA_CAPTURE=<dir>` | salva os frames apresentados em PNG (meio tamanho) |
+| `GAMBIARRA_CAPTURE_WORLD=0,2,8` | marca o **primeiro frame que roda 500 draws** — é o sinal de "o mundo começou a renderizar". Sem essa variável a mensagem não sai. |
+| `GAMBIARRA_D3D12_DEBUG=1` | camada de debug do D3D12 |
+| `GAMBIARRA_D3D12_DRED=1` | na falha de GPU, a alocação atingida e os comandos em voo |
+| `GAMBIARRA_GPU_TIMING=1` | na remoção do device, nomeia a lista e todos os comandos dela |
+| `GAMBIARRA_SKIP_PIPELINES=<hash>` | pula um pipeline específico, para isolar um culpado |
 
 ### 3.3 Medir os shaders sem abrir o jogo (muito mais rápido)
 
 ```powershell
-.\target\diag\SixMultiVersion.exe shader-info "<dump>\shaders.rpf"
-.\target\diag\SixMultiVersion.exe translate --list "<dump>\shaders.rpf"
-.\target\diag\SixMultiVersion.exe translate --list --validate "<dump>\shaders.rpf"
-.\target\diag\SixMultiVersion.exe translate --cache --pipelines "<dump>"   # aquece o cache que o `run` lê
+.\target\diag\GambiarraLauncher.exe shader-info "<dump>\shaders.rpf"
+.\target\diag\GambiarraLauncher.exe translate --list "<dump>\shaders.rpf"
+.\target\diag\GambiarraLauncher.exe translate --list --validate "<dump>\shaders.rpf"
+.\target\diag\GambiarraLauncher.exe translate --cache --pipelines "<dump>"   # aquece o cache que o `run` lê
 ```
 
 Uma passada completa sobre os 26.503 shaders leva **~255 s** e dá o inventário exato do que o tradutor não aguenta. É o loop de iteração que vale a pena: rodar o jogo custa 4 minutos e depende de GPU; isto custa 4 minutos e não depende de nada.
@@ -138,9 +138,9 @@ O número era estável entre corridas: um conjunto fixo de shaders, não ruído.
 
 No código (caminhos do upstream `cool_fox-main`):
 
-- `crates/SixM-gpu/src/host.rs` lia `D3D12_OPTIONS1` e usava **só** `WaveLaneCountMax`. O mínimo entrava apenas na decisão `set_host_rdna(amd && min==32 && max==64)`, nunca na escolha da largura de onda.
-- `crates/SixM-shader/src/emit/lower.rs` só tratava o caso oposto — `if wave == 64 && host_max_wave() == 32` rebaixa wave64 do console para wave32 num host NVIDIA. **Não existia o caminho inverso.**
-- `crates/SixM-shader/src/emit/shader.rs` emitia o metadado `WaveSize` (tag 11) e o campo do `PSV0` sempre que `wave_size` estava preenchido, sem olhar as capacidades do host.
+- `crates/Gambiarra-gpu/src/host.rs` lia `D3D12_OPTIONS1` e usava **só** `WaveLaneCountMax`. O mínimo entrava apenas na decisão `set_host_rdna(amd && min==32 && max==64)`, nunca na escolha da largura de onda.
+- `crates/Gambiarra-shader/src/emit/lower.rs` só tratava o caso oposto — `if wave == 64 && host_max_wave() == 32` rebaixa wave64 do console para wave32 num host NVIDIA. **Não existia o caminho inverso.**
+- `crates/Gambiarra-shader/src/emit/shader.rs` emitia o metadado `WaveSize` (tag 11) e o campo do `PSV0` sempre que `wave_size` estava preenchido, sem olhar as capacidades do host.
 
 ### Correção
 
@@ -153,7 +153,7 @@ Peças:
 1. `lower.rs`: `HOST_MIN_WAVE` + `set_host_min_wave()` + `host_min_wave()`, e `host_min_wave()` entra em `host_settings()`, que é **chave do cache de shaders** (senão um cache de outra máquina seria servido).
 2. `shader.rs`: campo `declare_wave: bool` (padrão `true`) no `Shader`, consultado nos **dois** lugares que publicam a largura de onda — os metadados de entrada do DXIL e o `PSV0`. Esquecer o `PSV0` não adianta: o driver valida os dois.
 3. `lower.rs`, na decisão: `if wave == 32 && host_min_wave() > 32 && group <= 32 { s.declare_wave = false; }`
-4. `host.rs` (SixM-gpu): `set_host_min_wave(o1.WaveLaneCountMin)`.
+4. `host.rs` (Gambiarra-gpu): `set_host_min_wave(o1.WaveLaneCountMin)`.
 5. Teste em `emit/wave64_tests.rs`: `a_wave32_group_of_one_wave_drops_its_declaration_on_64_lane_waves` — grupo de 32 com host de onda 32 declara `Some(32)`; com host de onda mínima 64 não declara; grupo de 64 com onda mínima 64 volta a declarar.
 
 ### Resultado medido
@@ -164,7 +164,7 @@ Peças:
 | pipelines recusados com `E_INVALIDARG` | 298 | **2** |
 | `host wave lanes` detectado | — | `min=64 max=64` |
 
-Suíte do `SixM-shader`: **246 passaram** com a correção contra **245** sem ela (o +1 é o teste novo), e **as mesmas 36 falhas** nos dois casos. As 36 são todas `no SM 6.6 device available` — ambientais, não regressão. Verificado revertendo a correção e rodando a suíte de novo.
+Suíte do `Gambiarra-shader`: **246 passaram** com a correção contra **245** sem ela (o +1 é o teste novo), e **as mesmas 36 falhas** nos dois casos. As 36 são todas `no SM 6.6 device available` — ambientais, não regressão. Verificado revertendo a correção e rodando a suíte de novo.
 
 Vale para **qualquer GPU GCN** (Polaris, Vega, e as placas AMD anteriores ao RDNA).
 
@@ -210,7 +210,7 @@ As 202 falhas restantes:
 
 ### Cuidado: a árvore importa
 
-A árvore `_SX-Local/Tools/SixM-DXGI67-Test` (um worktree mais antigo, com correções locais de DXGI/Agility) dá **227** falhas no mesmo pacote. O upstream já resolveu 25 delas:
+A árvore `_SX-Local/Tools/Gambiarra-DXGI67-Test` (um worktree mais antigo, com correções locais de DXGI/Agility) dá **227** falhas no mesmo pacote. O upstream já resolveu 25 delas:
 
 | falha | DXGI67 | upstream |
 |---|---|---|
@@ -276,7 +276,7 @@ Tirar o `+8` só do `Gs` (`HwStage::Gs => index`) e retraduzir:
 
 Parecia progresso. **Não era, e o experimento foi revertido.** Duas medições seguintes derrubaram a hipótese:
 
-**1. A metade alta não vem de registrador nenhum.** Diagnóstico `SIXM_WHY_HIGH=1`:
+**1. A metade alta não vem de registrador nenhum.** Diagnóstico `GAMBIARRA_WHY_HIGH=1`:
 
 ```
 190  WHY-HIGH stage=Gs base_reg=S(8) root=Table user_data=8 hi=Value(Value(38)) hi_input=None
@@ -285,7 +285,7 @@ Parecia progresso. **Não era, e o experimento foi revertido.** Duas medições 
 
 `hi_input=None` quer dizer que a metade alta é **valor calculado por instrução**, não um user SGPR. Cai por terra também a ideia de que o ponteiro seria de 64 bits repartido em s8:s9 (duas tabelas declaradas em `user_data` 8 e 9).
 
-**2. O `+8` está certo para os outros estágios fundidos.** Diagnóstico `SIXM_WHY_BASE=1`, contando em que registrador cada base resolvida caiu:
+**2. O `+8` está certo para os outros estágios fundidos.** Diagnóstico `GAMBIARRA_WHY_BASE=1`, contando em que registrador cada base resolvida caiu:
 
 | estágio | user_data → registrador | resoluções |
 |---|---|---|
@@ -305,7 +305,7 @@ Conclusão: tirar o `+8` do `Gs` fazia `ud8` casar com s8 **por coincidência**,
 
 ### Onde continuar
 
-O caminho não é mais mexer em `user_sgpr`. O próximo passo é **desmontar o `GS_VoxelizeGeneric` no offset 0x44** e ler a sequência de instruções que monta o endereço — o ferramental atual não expõe disassembly, então isso precisa ser construído (ou usar `SIXM_SHADER_SAVE` e um disassembler GFX10 externo). Sem ver as instruções, qualquer correção aqui é chute.
+O caminho não é mais mexer em `user_sgpr`. O próximo passo é **desmontar o `GS_VoxelizeGeneric` no offset 0x44** e ler a sequência de instruções que monta o endereço — o ferramental atual não expõe disassembly, então isso precisa ser construído (ou usar `GAMBIARRA_SHADER_SAVE` e um disassembler GFX10 externo). Sem ver as instruções, qualquer correção aqui é chute.
 
 **Pergunta respondida:** `Ms` funciona porque o `+8` é genuinamente correto para ele — 341.082 resoluções em s16 para `user_data 8`. A anomalia é só do `Gs`.
 
@@ -364,7 +364,7 @@ O que esperar em outra máquina:
 |---|---|---|---|---|
 | **AMD GCN** (Polaris, Vega, RX 400/500/Vega) | onda mínima 64 — **precisa da correção §5** | não | não | não passa da tela de carregamento |
 | **AMD RDNA 1** (RX 5000) | ondas 32 e 64 | não | parcial | mesh shaders barram |
-| **AMD RDNA 2+** (RX 6000+) | ondas 32 e 64 | sim | sim | **alvo** — é o que o SixMultiVersion pede |
+| **AMD RDNA 2+** (RX 6000+) | ondas 32 e 64 | sim | sim | **alvo** — é o que o GambiarraLauncher pede |
 | **NVIDIA Turing+** (RTX 20xx+) | onda 32 — exercita o caminho wave64→wave32, que já existia | sim | sim | alvo alternativo |
 | **Intel Arc** | onda variável | sim | sim | não testado |
 | **WARP** (software) | — | não | **SM 6.2** | não serve nem para teste de shader |
@@ -377,22 +377,22 @@ A correção de §5 só importa onde a onda mínima é 64, ou seja em GCN. Em RD
 
 | o quê | onde |
 |---|---|
-| Loop de execução instrumentado (ferramenta local, fora do repositório) | `_SX-Local/Tools/SixM-loop/SIXM_loop.py` |
-| Relatórios e frames por corrida | `_SX-Local/Tools/SixM-loop/runs/<data>-<label>/` |
-| Tradução offline do pacote | `_SX-Local/Tools/SixM-loop/runs/offline/` |
-| Sonda de capacidades D3D12 | `_SX-Local/Tools/SixM-diagnostics/d3d12-capabilities.exe` |
-| Logs brutos das corridas de 26/11 | `_SX-Local/6M-Development/Evidence/SixM-run-logs-2026-11-26/` |
-| Fonte upstream do SixMultiVersion | `cool_fox-main/` (sem git; é o tarball mais novo) |
-| Árvore com correções locais DXGI/Agility | `_SX-Local/Tools/SixM-DXGI67-Test/` (worktree de `SixM-Agility-Test`) |
-| Tentativa anterior de execução | `_SX-Local/6M-Development/Evidence/SixM-Run-Attempt-2026-11-26.md` |
+| Loop de execução instrumentado (ferramenta local, fora do repositório) | `_SX-Local/Tools/Gambiarra-loop/GAMBIARRA_loop.py` |
+| Relatórios e frames por corrida | `_SX-Local/Tools/Gambiarra-loop/runs/<data>-<label>/` |
+| Tradução offline do pacote | `_SX-Local/Tools/Gambiarra-loop/runs/offline/` |
+| Sonda de capacidades D3D12 | `_SX-Local/Tools/Gambiarra-diagnostics/d3d12-capabilities.exe` |
+| Logs brutos das corridas de 26/11 | `_SX-Local/6M-Development/Evidence/Gambiarra-run-logs-2026-11-26/` |
+| Fonte upstream do GambiarraLauncher | `cool_fox-main/` (sem git; é o tarball mais novo) |
+| Árvore com correções locais DXGI/Agility | `_SX-Local/Tools/Gambiarra-DXGI67-Test/` (worktree de `Gambiarra-Agility-Test`) |
+| Tentativa anterior de execução | `_SX-Local/6M-Development/Evidence/Gambiarra-Run-Attempt-2026-11-26.md` |
 
 ### Diagnósticos temporários no código
 
 Duas impressões foram adicionadas ao `cool_fox-main` para este trabalho e **devem sair** antes de qualquer envio upstream:
 
-- `resource.rs::why_no_base` — `SIXM_WHY_SGPR=1` imprime o registrador de entrada e o layout
-- `native.rs` (parse do container) — `SIXM_WHY_LAYOUT=1` imprime os `user_data` por etapa
+- `resource.rs::why_no_base` — `GAMBIARRA_WHY_SGPR=1` imprime o registrador de entrada e o layout
+- `native.rs` (parse do container) — `GAMBIARRA_WHY_LAYOUT=1` imprime os `user_data` por etapa
 
 ### Nota de contexto
 
-O SixMultiVersion **não é um emulador** e não é o launcher do 6M. O Xbox Series X é x86-64 AMD, a mesma arquitetura do host: o runner carrega o PE de verdade e liga os imports (`91 hle, 424 host, 72 title, 0 missing`). É uma camada de compatibilidade no estilo Wine/Proton. Não há CPU sendo emulada e, portanto, não há código de CPU para "converter".
+O GambiarraLauncher **não é um emulador** e não é o launcher do 6M. O Xbox Series X é x86-64 AMD, a mesma arquitetura do host: o runner carrega o PE de verdade e liga os imports (`91 hle, 424 host, 72 title, 0 missing`). É uma camada de compatibilidade no estilo Wine/Proton. Não há CPU sendo emulada e, portanto, não há código de CPU para "converter".

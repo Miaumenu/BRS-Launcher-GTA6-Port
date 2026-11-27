@@ -1,8 +1,8 @@
-# SixM MultiVersion on an RX 7900 XTX
+# Gambiarra MultiVersion on an RX 7900 XTX
 
 > **Origem.** Este checkout deriva do projeto **VIctory**, de
 > [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob GPL-3.0-or-later.
-> Os nomes `victory*` / `VICTORY_*` foram trocados localmente por `sixm*` / `SIXM_*`
+> Os nomes `victory*` / `VICTORY_*` foram trocados localmente por `gambiarra*` / `GAMBIARRA_*`
 > em 27/11/2026; o código, a licença e a autoria originais continuam sendo os de lá.
 > Logs e documentos anteriores a essa data usam os nomes antigos.
 
@@ -11,15 +11,15 @@
 Download and extract the Windows x64 ZIP from the [private releases](https://github.com/codec-d/cool_fox/releases/latest). Open PowerShell in the extracted folder and point the launcher at your own complete Xbox dump.
 
 ```powershell
-$env:SIXM_GAME_DIR = 'D:\Games\MyDump'
-.\SixM-MultiVersion.cmd pareto-residency
+$env:GAMBIARRA_GAME_DIR = 'D:\Games\MyDump'
+.\GambiarraLauncher.cmd pareto-residency
 ```
 
-The launcher selects Series S and the RTX-tested residency settings. It builds its shader cache locally under `%LOCALAPPDATA%\SixMultiVersion\cache-pareto`. Set `SIXM_CACHE_DIR` to reuse an existing cache outside the checkout. Windows x64, an AVX2 CPU, and a Direct3D 12 GPU with shader model 6.6 and mesh shader support are required.
+The launcher selects Series S and the RTX-tested residency settings. It builds its shader cache locally under `%LOCALAPPDATA%\GambiarraLauncher\cache-pareto`. Set `GAMBIARRA_CACHE_DIR` to reuse an existing cache outside the checkout. Windows x64, an AVX2 CPU, and a Direct3D 12 GPU with shader model 6.6 and mesh shader support are required.
 
-To build from this checkout, install the pinned Rust toolchain and the MSVC C++ build tools with a Windows SDK, then run `cargo build --release --locked -p sixm-multiversion`. The same launcher finds `target\release\sixm-multiversion.exe`. The sections below describe the upstream AMD fork and its separate launcher.
+To build from this checkout, install the pinned Rust toolchain and the MSVC C++ build tools with a Windows SDK, then run `cargo build --release --locked -p gambiarra-cli`. The same launcher finds `target\release\gambiarra-cli.exe`. The sections below describe the upstream AMD fork and its separate launcher.
 
-A fork of [SixMultiVersion](https://github.com/Marvisak/SixMultiVersion), a compatibility layer
+A fork of [GambiarraLauncher](https://github.com/Marvisak/GambiarraLauncher), a compatibility layer
 that runs an Xbox Series title natively on Windows from files the user supplies.
 This one is about **speed on AMD RDNA 3**: the world at 30 frames a second on
 one PC, without giving up the picture. It is not there yet.
@@ -52,7 +52,7 @@ What is known to be wrong:
 - Rooms with little direct light are too dark without `-RayTracing`.
 - Textures of what just came into view appear late while the title streams.
 - The first run with a new driver or a new build stutters while the driver makes
-  pipelines (`sixm-multiversion warm` makes them ahead).
+  pipelines (`gambiarra-cli warm` makes them ahead).
 - Recording a frame in the world makes the title's own watchdog end it.
 
 ## How to run it
@@ -62,10 +62,10 @@ model 6.6 and mesh shaders, Rust (the toolchain is pinned), the MSVC build
 tools, and your own dump of the title.
 
 ```powershell
-git clone https://github.com/avatarmanz/SixMultiVersion-7900XTX
-cd SixMultiVersion-7900XTX
-copy sixm-multiversion.example.toml sixm-multiversion.toml  # set your paths outside this folder
-cargo build --locked --profile diag -p sixm-multiversion --features diagnostics
+git clone https://github.com/avatarmanz/GambiarraLauncher-7900XTX
+cd GambiarraLauncher-7900XTX
+copy gambiarra-cli.example.toml gambiarra-cli.toml  # set your paths outside this folder
+cargo build --locked --profile diag -p gambiarra-cli --features diagnostics
 scripts\play.ps1 -Exe <path of your copy's executable>
 ```
 
@@ -75,12 +75,12 @@ something is wrong. `-RayTracing` turns the title's ray-traced indirect light on
 Before the first run, ahead of time (both can be stopped and go on later):
 
 ```powershell
-target\diag\sixm-multiversion.exe shaders <the shader archives>   # every shader translated, minutes
-target\diag\sixm-multiversion.exe warm --used                     # pipelines earlier runs drew with, for a new driver or build
+target\diag\gambiarra-cli.exe shaders <the shader archives>   # every shader translated, minutes
+target\diag\gambiarra-cli.exe warm --used                     # pipelines earlier runs drew with, for a new driver or build
 ```
 
 Commands, debugging switches and upstream's own description:
-[docs/README-fxceless.md](docs/README-fxceless.md). Every `SIXM_...` switch is
+[docs/README-fxceless.md](docs/README-fxceless.md). Every `GAMBIARRA_...` switch is
 described in a comment where it is read.
 
 ## What is different here
@@ -88,14 +88,14 @@ described in a comment where it is read.
 In short; the reasons and the measurements are in [docs/findings.md](docs/findings.md).
 
 - **List calls are written down, not carried out, on the title's threads**
-  (`SIXM_THIN`): eight threads of ours translate them.
+  (`GAMBIARRA_THIN`): eight threads of ours translate them.
 - **Submissions are prepared by a thread of ours and joined**
-  (`SIXM_ASYNC_SUBMIT`, `SIXM_JOIN_PARTS`), with what can be spread over
+  (`GAMBIARRA_ASYNC_SUBMIT`, `GAMBIARRA_JOIN_PARTS`), with what can be spread over
   threads spread: refreshes, compares (AVX2), descriptor records, landings.
 - **What shaders wrote comes back beside the write guards**, by the dwords that
-  changed, on a thread of its own (`SIXM_RELAY`, `SIXM_LAND`).
+  changed, on a thread of its own (`GAMBIARRA_RELAY`, `GAMBIARRA_LAND`).
 - **Buffer fills that need bytes still on the card are done on the card**
-  (`SIXM_CARD_STEPS`) instead of waiting for it.
+  (`GAMBIARRA_CARD_STEPS`) instead of waiting for it.
 - **The title's writes are caught more cheaply**: one view opened at a fault,
   blocks that rest, places in the title's code that look before they write.
 - **Textures go up on a copy queue of their own** and a slot shows one only after
@@ -110,17 +110,17 @@ In short; the reasons and the measurements are in [docs/findings.md](docs/findin
 This is a tree of other people's work with more on top. The history is kept, and
 commits taken from elsewhere name the commit and its author.
 
-- **[SixMultiVersion](https://github.com/Marvisak/SixMultiVersion)** by Marvisak and its
+- **[GambiarraLauncher](https://github.com/Marvisak/GambiarraLauncher)** by Marvisak and its
   contributors: the loader, the runtime services, the Direct3D 12 back end and
   the shader recompiler.
-- **[fxceless/sixm-fork](https://github.com/fxceless/sixm-fork)**: the fork
+- **[fxceless/gambiarra-fork](https://github.com/fxceless/gambiarra-fork)**: the fork
   this one started from, and the people whose pull requests it carries.
-- **[DexNom/SixMultiVersion](https://github.com/DexNom/SixMultiVersion)**: ray tracing fixes,
+- **[DexNom/GambiarraLauncher](https://github.com/DexNom/GambiarraLauncher)**: ray tracing fixes,
   cube gradients, sparse textures.
-- **[Belobug/SixMultiVersion-Belobug-AMD](https://github.com/Belobug/SixMultiVersion-Belobug-AMD)**:
+- **[Belobug/GambiarraLauncher-Belobug-AMD](https://github.com/Belobug/GambiarraLauncher-Belobug-AMD)**:
   the ambient light idea, pipeline workers, and work by romainhedouin.
-- **[FQY55kai/ZJOU-SIXM](https://github.com/FQY55kai/ZJOU-SIXM)**.
-- **[myokex/sixm-amd](https://github.com/myokex/sixm-amd)**: the guard over
+- **[FQY55kai/ZJOU-GAMBIARRA](https://github.com/FQY55kai/ZJOU-GAMBIARRA)**.
+- **[myokex/gambiarra-amd](https://github.com/myokex/gambiarra-amd)**: the guard over
   every view of a page (with Spexivus, joroyt and tightfall), and Joshua Odom's
   reads into title memory.
 - **Geckomacabre** and **cxy0072019-sketch**: the texture read-back.
@@ -130,5 +130,5 @@ commits taken from elsewhere name the commit and its author.
 
 ## License
 
-GPL-3.0-or-later, as SixMultiVersion. See [LICENSE](LICENSE); the one file that is not
+GPL-3.0-or-later, as GambiarraLauncher. See [LICENSE](LICENSE); the one file that is not
 covered is named in [docs/asset-policy.md](docs/asset-policy.md).

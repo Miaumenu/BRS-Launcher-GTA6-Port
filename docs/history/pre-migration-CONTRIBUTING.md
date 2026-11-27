@@ -1,6 +1,6 @@
 # Como trabalhar neste repositório
 
-Este repositório existe para **várias pessoas tentarem fazer o SixMultiVersion rodar em hardwares diferentes ao mesmo tempo**, sem que o trabalho de uma apague o da outra.
+Este repositório existe para **várias pessoas tentarem fazer o GambiarraLauncher rodar em hardwares diferentes ao mesmo tempo**, sem que o trabalho de uma apague o da outra.
 
 Leia esta página inteira antes do primeiro commit. As regras são poucas e existem por um motivo concreto: já aconteceu aqui de dois agentes mexerem na mesma árvore ao mesmo tempo e o resultado foi build quebrado, pasta duplicada e um diagnóstico errado que custou horas.
 
@@ -17,7 +17,7 @@ Leia esta página inteira antes do primeiro commit. As regras são poucas e exis
 ## 1. A estrutura
 
 ```
-SixMultiVersion/
+GambiarraLauncher/
 ├─ README.md                 o que é o projeto
 ├─ CONTRIBUTING.md           esta página
 ├─ LICENSE                   GPL-3.0-or-later (herdada do upstream)
@@ -55,8 +55,8 @@ Sim, o Git já faz isso sozinho com branches. A pasta por pessoa existe porque a
 ## 2. Começando
 
 ```powershell
-git clone https://github.com/Miaumenu/SixMultiVersion.git
-cd SixMultiVersion
+git clone https://github.com/Miaumenu/GambiarraLauncher.git
+cd GambiarraLauncher
 Copy-Item -Recurse contributors\_TEMPLATE contributors\<amd ou nvidia>\<seu-nome>
 ```
 
@@ -70,7 +70,7 @@ Preencha `STATUS.md` **antes** de mexer em código. Sem a sua máquina anotada, 
 2. Quando funcionar, gere o patch:
 
    ```powershell
-   git diff > ..\SixMultiVersion\contributors\<fabricante>\<seu-nome>\patches\0001-descricao-curta.patch
+   git diff > ..\GambiarraLauncher\contributors\<fabricante>\<seu-nome>\patches\0001-descricao-curta.patch
    ```
 
 3. Numere os patches em ordem (`0001-`, `0002-`…). Um patch = uma mudança com um motivo.
@@ -103,7 +103,7 @@ git apply contributors\<fabricante>\<nome>\patches\0001-xxx.patch
 Tire os quatro primeiros com a sonda:
 
 ```powershell
-.\main\target\diag\sixm-multiversion.exe inspect --help
+.\main\target\diag\gambiarra-cli.exe inspect --help
 ```
 
 ### `CHANGES.md`
@@ -135,8 +135,8 @@ Uma mudança só sobe quando:
 
 1. Tem patch, `CHANGES.md` com medição antes/depois e um teste que falha antes e passa depois.
 2. **Outra pessoa, em outra máquina**, aplicou o patch e confirmou o resultado.
-3. O build passa: `cargo build --profile diag -p sixm-multiversion --features diagnostics`.
-4. A suíte passa: `cargo test -p sixm-shader` — com a mesma contagem de falhas de antes, ou menos. Falha ambiental (`no SM 6.6 device available`) não conta, mas **tem que ser a mesma quantidade**.
+3. O build passa: `cargo build --profile diag -p gambiarra-cli --features diagnostics`.
+4. A suíte passa: `cargo test -p gambiarra-shader` — com a mesma contagem de falhas de antes, ou menos. Falha ambiental (`no SM 6.6 device available`) não conta, mas **tem que ser a mesma quantidade**.
 
 Aí sim: PR com o patch já aplicado em `main/`, apontando a pasta do contribuinte de origem.
 
@@ -165,6 +165,6 @@ O `.gitignore` já barra a maior parte, mas ele não substitui conferir o `git s
 
 ## 8. Origem e licença
 
-O código em `main/` deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob **GPL-3.0-or-later**. Os nomes `victory*` / `VICTORY_*` foram trocados por `sixm*` / `SIXM_*` neste fork; o código, a licença e a autoria originais continuam sendo de lá, e o `LICENSE` não se altera.
+O código em `main/` deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob **GPL-3.0-or-later**. Os nomes `victory*` / `VICTORY_*` foram trocados por `gambiarra*` / `GAMBIARRA_*` neste fork; o código, a licença e a autoria originais continuam sendo de lá, e o `LICENSE` não se altera.
 
 Qualquer coisa que você publique aqui entra sob a mesma licença.

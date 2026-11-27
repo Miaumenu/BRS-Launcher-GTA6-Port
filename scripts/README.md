@@ -13,13 +13,13 @@ classifica cada linha, para sozinho no primeiro frame do mundo / erro fatal /
 tempo limite, e escreve um relatório curto em vez de um megabyte de log.
 
 ```powershell
-$env:SIXM_GAME_DIR = "D:\seu\dump"
+$env:GAMBIARRA_GAME_DIR = "D:\seu\dump"
 python scripts\run-loop.py --label teste --build --dred --timing
 ```
 
-Usa `SIXM_KEYS` (aperta teclas sem precisar de foco — é como se passa da tela
-de início), `SIXM_CAPTURE` (frames em PNG) e `SIXM_CAPTURE_WORLD` (marca o
+Usa `GAMBIARRA_KEYS` (aperta teclas sem precisar de foco — é como se passa da tela
+de início), `GAMBIARRA_CAPTURE` (frames em PNG) e `GAMBIARRA_CAPTURE_WORLD` (marca o
 primeiro frame com 500 draws, o sinal de que o mundo começou a renderizar;
 **sem essa variável a mensagem não sai**).
 
-Nada do jogo é copiado: o dump fica onde está, apontado por `SIXM_GAME_DIR`.
+Nada do jogo é copiado: o dump fica onde está, apontado por `GAMBIARRA_GAME_DIR`.

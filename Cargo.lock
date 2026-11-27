@@ -198,6 +198,123 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "gambiarra-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "clap",
+ "gambiarra-core",
+ "gambiarra-game",
+ "gambiarra-hle",
+ "gambiarra-loader",
+ "gambiarra-pe",
+ "gambiarra-shader",
+ "memchr",
+ "walkdir",
+]
+
+[[package]]
+name = "gambiarra-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "gambiarra-formats"
+version = "0.1.0"
+
+[[package]]
+name = "gambiarra-game"
+version = "0.1.0"
+dependencies = [
+ "memchr",
+ "zlib-rs",
+]
+
+[[package]]
+name = "gambiarra-gpu"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "gambiarra-formats",
+ "gambiarra-pipeline",
+ "gambiarra-shader",
+ "tempfile",
+ "tracing",
+ "windows",
+ "windows-sys",
+ "zlib-rs",
+]
+
+[[package]]
+name = "gambiarra-hle"
+version = "0.1.0"
+dependencies = [
+ "gambiarra-formats",
+ "gambiarra-gpu",
+ "gambiarra-loader",
+ "gambiarra-pe",
+ "opus-pure",
+ "tempfile",
+ "tracing",
+ "windows",
+ "windows-core",
+ "windows-sys",
+ "zlib-rs",
+]
+
+[[package]]
+name = "gambiarra-loader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "gambiarra-core",
+ "gambiarra-pe",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "windows-sys",
+]
+
+[[package]]
+name = "gambiarra-pe"
+version = "0.1.0"
+dependencies = [
+ "object",
+ "thiserror",
+]
+
+[[package]]
+name = "gambiarra-pipeline"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "gambiarra-core",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "gambiarra-shader"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "windows",
+ "windows-sys",
+ "zlib-rs",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -433,123 +550,6 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "sixm-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "tempfile",
- "thiserror",
- "toml",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "sixm-formats"
-version = "0.1.0"
-
-[[package]]
-name = "sixm-game"
-version = "0.1.0"
-dependencies = [
- "memchr",
- "zlib-rs",
-]
-
-[[package]]
-name = "sixm-gpu"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blake3",
- "sixm-formats",
- "sixm-pipeline",
- "sixm-shader",
- "tempfile",
- "tracing",
- "windows",
- "windows-sys",
- "zlib-rs",
-]
-
-[[package]]
-name = "sixm-hle"
-version = "0.1.0"
-dependencies = [
- "opus-pure",
- "sixm-formats",
- "sixm-gpu",
- "sixm-loader",
- "sixm-pe",
- "tempfile",
- "tracing",
- "windows",
- "windows-core",
- "windows-sys",
- "zlib-rs",
-]
-
-[[package]]
-name = "sixm-loader"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blake3",
- "sixm-core",
- "sixm-pe",
- "tempfile",
- "thiserror",
- "tracing",
- "windows-sys",
-]
-
-[[package]]
-name = "sixm-multiversion"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blake3",
- "clap",
- "memchr",
- "sixm-core",
- "sixm-game",
- "sixm-hle",
- "sixm-loader",
- "sixm-pe",
- "sixm-shader",
- "walkdir",
-]
-
-[[package]]
-name = "sixm-pe"
-version = "0.1.0"
-dependencies = [
- "object",
- "thiserror",
-]
-
-[[package]]
-name = "sixm-pipeline"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "blake3",
- "sixm-core",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "sixm-shader"
-version = "0.1.0"
-dependencies = [
- "thiserror",
- "windows",
- "windows-sys",
- "zlib-rs",
-]
 
 [[package]]
 name = "smallvec"

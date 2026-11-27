@@ -23,7 +23,7 @@ frames/
 *.events.jsonl
 cache*/
 VIctoryCache*/
-SixMCache*/
+GambiarraCache*/
 
 # ambiente
 .vscode/

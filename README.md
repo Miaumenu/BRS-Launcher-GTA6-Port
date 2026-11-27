@@ -1,15 +1,15 @@
-# BRS-Launcher-GTA6-Port
+# GambiarraLauncher
 
 Projeto de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável de GTA 6 nem um launcher visual completo.
 
 ## Estado atual
 
-- O workspace Rust contém o CLI sixm-multiversion e os crates sixm-*.
+- O workspace Rust contém o CLI gambiarra-cli e os crates gambiarra-*.
 - O relatório local da RX 550 alcança a arte de carregamento, mas não renderiza o mundo: a placa reporta Shader Model 6.5 e ausência de mesh shaders.
 - A matriz distingue resultados medidos localmente, resultados externos e hardware ainda não testado.
 - O launcher visual, perfis de GPU por fabricante e benchmark automático ainda não estão implementados.
 
-O nome do projeto é **BRS-Launcher-GTA6-Port**; o estado acima descreve o código que existe hoje. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
+O nome do projeto é **GambiarraLauncher**; o estado acima descreve o código que existe hoje. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
 
 ## Comece aqui
 
@@ -29,11 +29,11 @@ Na raiz do repositório:
     cargo fmt --all -- --check
     cargo clippy --workspace --locked
     cargo test --workspace --locked
-    cargo build --release -p sixm-multiversion
+    cargo build --release -p gambiarra-cli
 
 Clippy currently reports inherited warnings in the GPU prototype; CI shows them without making the existing baseline fatal. Compilation errors and failed tests remain blocking.
 
-Para configurar caminhos locais, copie configs/brs-launcher-gta6-port.example.toml para sixm-multiversion.toml e preencha apenas caminhos para arquivos que você possui. O arquivo local é ignorado pelo Git.
+Para configurar caminhos locais, copie configs/gambiarra-launcher.example.toml para gambiarra-cli.toml e preencha apenas caminhos para arquivos que você possui. O arquivo local é ignorado pelo Git.
 
 ## Portabilidade de GPU
 

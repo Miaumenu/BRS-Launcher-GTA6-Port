@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""One iteration of the SixMultiVersion loop: build, run, watch, classify, report.
+"""One iteration of the GambiarraLauncher loop: build, run, watch, classify, report.
 
 Runs the diagnostics build against the local game, follows its stderr live,
 stops as soon as the run has told us something (the world's first frame, a
 fatal error, or the time limit), and writes a short report instead of a
 megabyte of log.
 
-    python sixm_loop.py --label wave32 --build
-    python sixm_loop.py --label dred --dred --timing --timeout 180
+    python gambiarra_loop.py --label wave32 --build
+    python gambiarra_loop.py --label dred --dred --timing --timeout 180
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ from pathlib import Path
 
 # Raiz do repositorio: este script vive em scripts/.
 TREE = Path(__file__).resolve().parents[1]
-EXE = TREE / "target" / "diag" / "sixm-multiversion.exe"
-# O dump e SEU: aponte SIXM_GAME_DIR para a pasta dele. Nada do jogo entra aqui.
-GAME = Path(os.environ.get("SIXM_GAME_DIR", "")) / "game_scarlett_master.exe"
+EXE = TREE / "target" / "diag" / "gambiarra-cli.exe"
+# O dump e SEU: aponte GAMBIARRA_GAME_DIR para a pasta dele. Nada do jogo entra aqui.
+GAME = Path(os.environ.get("GAMBIARRA_GAME_DIR", "")) / "game_scarlett_master.exe"
 RUNS = TREE / "target" / "run-loop"
 CARGO = TREE
 
@@ -81,7 +81,7 @@ def build(log):
     env["CARGO_HOME"] = str(CARGO / "cargo")
     env["RUSTUP_HOME"] = str(CARGO / "rustup")
     env["PATH"] = str(CARGO / "cargo" / "bin") + os.pathsep + env["PATH"]
-    cmd = ["cargo", "build", "--profile", "diag", "-p", "sixm", "--features", "diagnostics"]
+    cmd = ["cargo", "build", "--profile", "diag", "-p", "gambiarra", "--features", "diagnostics"]
     with log.open("w", encoding="utf-8", errors="replace") as f:
         r = subprocess.run(cmd, cwd=TREE, env=env, stdout=f, stderr=subprocess.STDOUT)
     if r.returncode != 0:
@@ -109,10 +109,10 @@ def main():
     ap.add_argument("--keys", default="40:Enter,55:Enter,70:Enter,90:Enter,110:Enter")
     ap.add_argument("--console", default="series-x")
     ap.add_argument("--build", action="store_true")
-    ap.add_argument("--dred", action="store_true", help="SIXM_D3D12_DRED=1")
-    ap.add_argument("--timing", action="store_true", help="SIXM_GPU_TIMING=1")
+    ap.add_argument("--dred", action="store_true", help="GAMBIARRA_D3D12_DRED=1")
+    ap.add_argument("--timing", action="store_true", help="GAMBIARRA_GPU_TIMING=1")
     ap.add_argument("--no-debug-layer", action="store_true")
-    ap.add_argument("--skip-pipelines", default="", help="SIXM_SKIP_PIPELINES=<hashes>")
+    ap.add_argument("--skip-pipelines", default="", help="GAMBIARRA_SKIP_PIPELINES=<hashes>")
     ap.add_argument("--env", action="append", default=[], help="NAME=VALUE, repeatable")
     ap.add_argument("--after-world", type=float, default=12,
                     help="seconds to keep running once the world renders")
@@ -129,18 +129,18 @@ def main():
         return 2
 
     env = dict(os.environ)
-    env["SIXM_CAPTURE"] = str(frames)
-    env["SIXM_CAPTURE_WORLD"] = "0,2,8"
+    env["GAMBIARRA_CAPTURE"] = str(frames)
+    env["GAMBIARRA_CAPTURE_WORLD"] = "0,2,8"
     if args.keys:
-        env["SIXM_KEYS"] = args.keys
+        env["GAMBIARRA_KEYS"] = args.keys
     if not args.no_debug_layer:
-        env["SIXM_D3D12_DEBUG"] = "1"
+        env["GAMBIARRA_D3D12_DEBUG"] = "1"
     if args.dred:
-        env["SIXM_D3D12_DRED"] = "1"
+        env["GAMBIARRA_D3D12_DRED"] = "1"
     if args.timing:
-        env["SIXM_GPU_TIMING"] = "1"
+        env["GAMBIARRA_GPU_TIMING"] = "1"
     if args.skip_pipelines:
-        env["SIXM_SKIP_PIPELINES"] = args.skip_pipelines
+        env["GAMBIARRA_SKIP_PIPELINES"] = args.skip_pipelines
     for pair in args.env:
         name, _, value = pair.partition("=")
         env[name] = value

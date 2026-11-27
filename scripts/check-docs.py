@@ -19,7 +19,7 @@ REQUIRED = (
     "docs/hardware-compatibility.md",
     "docs/gpu-portability.md",
     "reports/hardware/_TEMPLATE.md",
-    "configs/brs-launcher-gta6-port.example.toml",
+    "configs/gambiarra-launcher.example.toml",
 )
 EXCLUDED_DOC_DIRS = {"docs/history", "reports/archive", "inspiration"}
 

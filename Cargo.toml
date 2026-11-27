@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
 # These directories are documentation placeholders, not Rust workspace members.
-exclude = ["tests/fixtures", "apps/gta6-pc-launcher"]
+exclude = ["tests/fixtures", "apps/gambiarra-launcher"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,15 +13,15 @@ publish = false
 
 [workspace.dependencies]
 # Internal crates
-sixm-core = { path = "crates/sixm-core" }
-sixm-pe = { path = "crates/sixm-pe" }
-sixm-loader = { path = "crates/sixm-loader" }
-sixm-hle = { path = "crates/sixm-hle" }
-sixm-gpu = { path = "crates/sixm-gpu" }
-sixm-shader = { path = "crates/sixm-shader" }
-sixm-formats = { path = "crates/sixm-formats" }
-sixm-pipeline = { path = "crates/sixm-pipeline" }
-sixm-game = { path = "crates/sixm-game" }
+gambiarra-core = { path = "crates/gambiarra-core" }
+gambiarra-pe = { path = "crates/gambiarra-pe" }
+gambiarra-loader = { path = "crates/gambiarra-loader" }
+gambiarra-hle = { path = "crates/gambiarra-hle" }
+gambiarra-gpu = { path = "crates/gambiarra-gpu" }
+gambiarra-shader = { path = "crates/gambiarra-shader" }
+gambiarra-formats = { path = "crates/gambiarra-formats" }
+gambiarra-pipeline = { path = "crates/gambiarra-pipeline" }
+gambiarra-game = { path = "crates/gambiarra-game" }
 
 # External crates
 anyhow = "1.0.104"
@@ -73,7 +73,7 @@ opt-level = 2
 debug = "line-tables-only"
 
 # The development build: release code generation plus the `diagnostics`
-# feature (`cargo build --profile diag -p sixm-multiversion --features diagnostics`),
+# feature (`cargo build --profile diag -p gambiarra-cli --features diagnostics`),
 # kept in its own folder so it does not evict the plain release build.
 [profile.diag]
 inherits = "release"

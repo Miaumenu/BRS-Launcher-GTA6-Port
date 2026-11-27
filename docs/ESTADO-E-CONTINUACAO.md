@@ -7,16 +7,16 @@
 
 ## 1. Onde o código está
 
-Existe **uma única árvore** de código: esta, `BRS-Launcher-GTA6-Port/`.
+Existe **uma única árvore** de código: esta, `GambiarraLauncher/`.
 
-Até esta madrugada havia cinco cópias do mesmo código no disco (`cool_fox-main/`, `SixMultiVersion/main/`, e três árvores de experimento em `_SX-Local/Tools/SixM-*-Test/`). Foram **apagadas** depois de confirmado que esta árvore contém todo o trabalho — liberou 1,6 GB. Os logs que importavam foram preservados em `_SX-Local/6M-Development/Evidence/victory-run-logs-2026-11-26/`.
+Até esta madrugada havia cinco cópias do mesmo código no disco (`cool_fox-main/`, `GambiarraLauncher/main/`, e três árvores de experimento em `_SX-Local/Tools/Gambiarra-*-Test/`). Foram **apagadas** depois de confirmado que esta árvore contém todo o trabalho — liberou 1,6 GB. Os logs que importavam foram preservados em `_SX-Local/6M-Development/Evidence/victory-run-logs-2026-11-26/`.
 
 Dois repositórios no GitHub, **os dois privados** (owner `Miaumenu`):
 
 | repositório | o que é |
 |---|---|
-| `Miaumenu/BRS-Launcher-GTA6-Port` | este, o que vale |
-| `Miaumenu/SixMultiVersion` | tentativa anterior de estrutura; conteúdo já migrado para cá |
+| `Miaumenu/GambiarraLauncher` | este, o que vale |
+| `Miaumenu/GambiarraLauncher` | tentativa anterior de estrutura; conteúdo já migrado para cá |
 
 Privado significa que o link dá **404 para quem não está logado com acesso** — foi o que aconteceu quando o link foi aberto em outra janela. Para liberar: `Settings` → `Collaborators` (convida um a um) ou `Settings` → `Danger Zone` → `Make public`.
 
@@ -26,7 +26,7 @@ Privado significa que o link dá **404 para quem não está logado com acesso** 
 
 Uma camada de compatibilidade que roda um título Xbox Series nativamente no Windows — **não é emulador**: o Xbox Series X é x86-64 AMD, o executável do título roda na CPU sem emulação. O que a camada fornece é a API do GDK, o D3D12-on-Xbox e um tradutor que converte o código de máquina GFX10 do console em DXIL.
 
-Deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), **GPL-3.0-or-later**. Os nomes `victory*`/`VICTORY_*` foram trocados por `sixm*`/`SIXM_*`. A licença e a autoria originais continuam valendo.
+Deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), **GPL-3.0-or-later**. Os nomes `victory*`/`VICTORY_*` foram trocados por `gambiarra*`/`GAMBIARRA_*`. A licença e a autoria originais continuam valendo.
 
 ---
 
@@ -50,9 +50,9 @@ As 6 que sobram são todas `Cs: a descriptor read only as data`.
 ### Duas correções nossas, as duas medidas
 
 1. **wave32 em host de onda 64** (AMD GCN). Avisos `wave lane count of 32`: 509 → 3. Pipelines recusados com `E_INVALIDARG`: 298 → 2.
-2. **Caminho `MEMORY` para o estágio `Gs`**. Os 196 `GS_VoxelizeGeneric` passaram a traduzir. Uma condição em `crates/sixm-shader/src/resource.rs`.
+2. **Caminho `MEMORY` para o estágio `Gs`**. Os 196 `GS_VoxelizeGeneric` passaram a traduzir. Uma condição em `crates/gambiarra-shader/src/resource.rs`.
 
-Testes: `cargo test -p sixm-shader` → **246 passam, 36 falham**, e as 36 são `no SM 6.6 device available` (ambientais, idênticas antes e depois das duas correções).
+Testes: `cargo test -p gambiarra-shader` → **246 passam, 36 falham**, e as 36 são `no SM 6.6 device available` (ambientais, idênticas antes e depois das duas correções).
 
 ### O muro: hardware
 
@@ -82,16 +82,16 @@ Motivo: **35% dos shaders do título (9.282 de 26.503) são mesh shaders** e a p
 
 ```powershell
 # compilar (a toolchain portátil está em _SX-Local\Tools\rust-toolchain)
-cargo build --profile diag -p sixm-multiversion --features diagnostics
+cargo build --profile diag -p gambiarra-cli --features diagnostics
 
 # medir os shaders: ~4 min, sem abrir o jogo, sem depender de GPU
-.\target\diag\sixm-multiversion.exe translate --list "<dump>\shaders.rpf"
+.\target\diag\gambiarra-cli.exe translate --list "<dump>\shaders.rpf"
 
 # rodar o jogo com instrumentação
-.\target\diag\sixm-multiversion.exe run "<dump>\game_scarlett_master.exe" --execute --console series-x
+.\target\diag\gambiarra-cli.exe run "<dump>\game_scarlett_master.exe" --execute --console series-x
 ```
 
-Variáveis úteis: `SIXM_KEYS=40:Enter` (aperta teclas sem precisar de foco — é como se passa da tela de início), `SIXM_CAPTURE=<dir>` (salva frames em PNG), `SIXM_CAPTURE_WORLD=0,2,8` (marca o primeiro frame com 500 draws — **sem ela a mensagem do mundo não sai**), `SIXM_D3D12_DEBUG=1`, `SIXM_D3D12_DRED=1`, `SIXM_GPU_TIMING=1`.
+Variáveis úteis: `GAMBIARRA_KEYS=40:Enter` (aperta teclas sem precisar de foco — é como se passa da tela de início), `GAMBIARRA_CAPTURE=<dir>` (salva frames em PNG), `GAMBIARRA_CAPTURE_WORLD=0,2,8` (marca o primeiro frame com 500 draws — **sem ela a mensagem do mundo não sai**), `GAMBIARRA_D3D12_DEBUG=1`, `GAMBIARRA_D3D12_DRED=1`, `GAMBIARRA_GPU_TIMING=1`.
 
 **Três armadilhas que já custaram horas:**
 
@@ -105,10 +105,10 @@ Variáveis úteis: `SIXM_KEYS=40:Enter` (aperta teclas sem precisar de foco — 
 
 | decisão | situação |
 |---|---|
-| **Nome do projeto** | decidido: `BRS-Launcher-GTA6-Port`. A pasta local, o repositório GitHub e o título do PR já usam esse nome. Nomes internos dos crates (`sixm-*`) ficam preservados por enquanto; renomeá-los é uma mudança separada e ampla. |
+| **Nome do projeto** | decidido: `GambiarraLauncher`. A pasta local, o repositório GitHub e o título do PR já usam esse nome. Nomes internos dos crates (`gambiarra-*`) ficam preservados por enquanto; renomeá-los é uma mudança separada e ampla. |
 | **Ignorar tudo menos esta pasta** | pedido. Falta definir se o `.gitignore` é o da raiz do workspace (`MEU PROPIO LAUNCHER`) ou o deste repositório. |
 | **Trazer do `_SX-Local` o que ajuda** | pedido. Candidatos reais: o laudo de shaders, os logs de corrida preservados, a sonda `d3d12-capabilities.exe`, o loop de execução instrumentado. O resto (Ghidra, assinaturas, análise do REA, `Private/`) é análise do binário e **não ajuda o launcher**. |
-| **Separar o launcher do SixM** | pedido, para depois. |
+| **Separar o launcher do Gambiarra** | pedido, para depois. |
 
 ---
 
@@ -118,7 +118,7 @@ Duas referências foram clonadas em `inspiration/`:
 
 ### AmericasLauncher (`isaac-btw/AmericasLauncher`)
 
-**É um launcher pronto em C#** (21 `.cs`, 2 `.csproj`, 2 `.xaml`) — exatamente a peça que falta aqui, já que `apps/gta6-pc-launcher/` é só um lugar reservado. O que ele já resolve: UI 720p com cartões de runner, instalação de dependências por `winget`, clone e build de cada runner, saída do console integrada, execução de `preLaunchArgs` (tradução de pipeline) antes do jogo, botão de parar que mata o runner, seletor Series X/S, log em arquivo, auto-update.
+**É um launcher pronto em C#** (21 `.cs`, 2 `.csproj`, 2 `.xaml`) — exatamente a peça que falta aqui, já que `apps/gambiarra-launcher/` é só um lugar reservado. O que ele já resolve: UI 720p com cartões de runner, instalação de dependências por `winget`, clone e build de cada runner, saída do console integrada, execução de `preLaunchArgs` (tradução de pipeline) antes do jogo, botão de parar que mata o runner, seletor Series X/S, log em arquivo, auto-update.
 
 Ele trata runners como **plugins configurados em JSON** (`src/AmericasLauncher/Data/runners.json`, 9 runners). Esse desenho serve direto para nós: o nosso binário vira mais um runner.
 

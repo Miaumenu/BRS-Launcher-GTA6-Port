@@ -12,7 +12,7 @@
 /tests/fixtures/*/target/
 
 # Local configuration (contains paths to YOUR files)
-/sixm-multiversion.toml
+/gambiarra-cli.toml
 # Legacy config filename remains supported.
 /victory.toml
 
@@ -48,7 +48,7 @@
 # Typical game data (non-exhaustive on purpose; the policy check is an allowlist)
 *.bin
 # The one exception (docs/asset-policy.md): the BCPack format's constant tables.
-!/crates/sixm-formats/src/bcpack-tables.bin
+!/crates/gambiarra-formats/src/bcpack-tables.bin
 *.dat
 *.pak
 *.rpf
@@ -74,11 +74,11 @@
 *.events.jsonl
 /cache*/
 VIctoryCache*/
-SixMCache*/
+GambiarraCache*/
 
 # Local user configuration
-/sixm-multiversion.toml
-/sixm.toml
+/gambiarra-cli.toml
+/gambiarra.toml
 *.mp4
 *.bik
 *.bk2

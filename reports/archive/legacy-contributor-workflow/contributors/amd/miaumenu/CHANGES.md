@@ -6,7 +6,7 @@
 - **Status:** **funcionou** — e já está aplicado em `main/`
 - **Confirmação em segunda máquina:** ❌ **pendente** (ver aviso no fim)
 - **Hipótese:** numa GPU cuja onda mais estreita é de 64 lanes (AMD pré-RDNA), o driver recusa `WaveSize(32)` com `E_INVALIDARG (0x80070057)`. O tradutor declarava essa largura sem olhar as capacidades do host.
-- **Arquivos tocados:** `crates/sixm-shader/src/emit/{lower,shader,mod,wave64_tests}.rs`, `crates/sixm-gpu/src/host.rs`
+- **Arquivos tocados:** `crates/gambiarra-shader/src/emit/{lower,shader,mod,wave64_tests}.rs`, `crates/gambiarra-gpu/src/host.rs`
 - **Patch:** `patches/0001-wave32-em-host-de-onda-64.patch` (104 linhas adicionadas, 8 removidas)
 
 ### O que a mudança faz
@@ -20,7 +20,7 @@ Peças:
 1. `lower.rs` — `HOST_MIN_WAVE` + `set_host_min_wave()` + `host_min_wave()`, e a onda mínima entra em `host_settings()`, que é **chave do cache de shaders** (senão um cache de outra máquina seria servido).
 2. `shader.rs` — campo `declare_wave: bool`, consultado nos **dois** lugares que publicam a largura: os metadados de entrada do DXIL **e o `PSV0`**. Esquecer o `PSV0` não adianta, o driver valida os dois.
 3. `lower.rs`, na decisão — `if wave == 32 && host_min_wave() > 32 && group <= 32 { s.declare_wave = false; }`
-4. `host.rs` (sixm-gpu) — passa `WaveLaneCountMin` ao tradutor; antes só o `Max` era lido.
+4. `host.rs` (gambiarra-gpu) — passa `WaveLaneCountMin` ao tradutor; antes só o `Max` era lido.
 
 ### Medição
 
@@ -58,8 +58,8 @@ Em RDNA e NVIDIA a correção não muda nada: a condição `host_min_wave() > 32
 
 | medição | resultado |
 |---|---|
-| `SIXM_WHY_HIGH=1` | a metade alta é `hi_input=None` — **valor calculado por instrução**, não um registrador. Cai também a ideia de um ponteiro de 64 bits repartido em s8:s9. |
-| `SIXM_WHY_BASE=1` | `Ms` resolve **753.825** endereços com o `+8` (ud8 → s16) e `Es` resolve **1.199** (ud9 → s17). O `+8` está certo para os dois — e o `Es` é a **outra metade do mesmo programa fundido** do `Gs`. Não há razão de hardware para as duas metades usarem bases diferentes. |
+| `GAMBIARRA_WHY_HIGH=1` | a metade alta é `hi_input=None` — **valor calculado por instrução**, não um registrador. Cai também a ideia de um ponteiro de 64 bits repartido em s8:s9. |
+| `GAMBIARRA_WHY_BASE=1` | `Ms` resolve **753.825** endereços com o `+8` (ud8 → s16) e `Es` resolve **1.199** (ud9 → s17). O `+8` está certo para os dois — e o `Es` é a **outra metade do mesmo programa fundido** do `Gs`. Não há razão de hardware para as duas metades usarem bases diferentes. |
 
 Ou seja: tirar o `+8` fazia `ud8` casar com s8 **por coincidência**, ligando o endereço ao parâmetro errado. O erro seguinte era sintoma disso. Se eu tivesse aceitado "saiu de um erro e entrou em outro, logo avancei", teria enterrado um bug silencioso em 196 shaders.
 
@@ -114,7 +114,7 @@ De 26.084 programas, falham 6 — todos o mesmo motivo (`Cs: a descriptor read o
 
 ### Teste de regressão
 
-`cargo test -p sixm-shader`: **246 passaram, 36 falharam** — a mesma contagem de antes da
+`cargo test -p gambiarra-shader`: **246 passaram, 36 falharam** — a mesma contagem de antes da
 mudança. As 36 são `no SM 6.6 device available`, ambientais.
 
 Medido duas vezes: uma com os diagnósticos temporários no código e outra com a árvore já
@@ -122,8 +122,8 @@ limpa, para garantir que o número é da correção e não do instrumental.
 
 ### Nota
 
-Os diagnósticos temporários (`SIXM_WHY_SGPR`, `SIXM_WHY_LAYOUT`, `SIXM_WHY_BASE`,
-`SIXM_WHY_HIGH`, `SIXM_DUMP_CODE`) foram **removidos** depois que a investigação terminou.
+Os diagnósticos temporários (`GAMBIARRA_WHY_SGPR`, `GAMBIARRA_WHY_LAYOUT`, `GAMBIARRA_WHY_BASE`,
+`GAMBIARRA_WHY_HIGH`, `GAMBIARRA_DUMP_CODE`) foram **removidos** depois que a investigação terminou.
 `native.rs` voltou a ser idêntico ao upstream. O patch contém só a correção.
 
 ---
@@ -132,7 +132,7 @@ Os diagnósticos temporários (`SIXM_WHY_SGPR`, `SIXM_WHY_LAYOUT`, `SIXM_WHY_BAS
 
 | hipótese | como foi derrubada |
 |---|---|
-| Os 196 `Gs` são um par ES-GS fundido com os user SGPRs divididos (ES com dwords 0..7, GS com 8..14) | `SIXM_WHY_LAYOUT=1` mostrou que **Es e Gs declaram layouts idênticos**, par a par. Não há divisão. |
+| Os 196 `Gs` são um par ES-GS fundido com os user SGPRs divididos (ES com dwords 0..7, GS com 8..14) | `GAMBIARRA_WHY_LAYOUT=1` mostrou que **Es e Gs declaram layouts idênticos**, par a par. Não há divisão. |
 | O `+8` do `Gs` está errado | `Ms` e `Es` resolvem centenas de milhares de endereços **com** o `+8`. A anomalia é só do `Gs`. |
 | A metade alta do endereço vem de s9 (a outra tabela declarada) | `hi_input=None`: é valor calculado. O disassembly mostrou que é `s_and_b32 s1, s9, 0xff` — vem de s9 **mascarado**, não de s9 direto. |
 | A remoção do device aos 55 s era causada pela correção wave32 | Com DRED e GPU timing ligados a corrida foi aos 250 s **sem** remoção. Não reproduziu. Continua sem investigação a fundo. |
@@ -142,6 +142,6 @@ Os diagnósticos temporários (`SIXM_WHY_SGPR`, `SIXM_WHY_LAYOUT`, `SIXM_WHY_BAS
 
 1. **Confirmar o 0001 numa segunda máquina GCN.**
 2. **Rodar em GPU com mesh shaders e SM 6.6** — é o experimento que decide se o projeto funciona. Aqui só dá para medir o teto da RX 550.
-3. **Os 196 `Gs`.** O caminho não é mais `user_sgpr`: é desmontar o `GS_VoxelizeGeneric` no offset 0x44 e ler as instruções que montam o endereço. O dump existe (`SIXM_DUMP_CODE=Gs`) e ainda não foi lido.
+3. **Os 196 `Gs`.** O caminho não é mais `user_sgpr`: é desmontar o `GS_VoxelizeGeneric` no offset 0x44 e ler as instruções que montam o endereço. O dump existe (`GAMBIARRA_DUMP_CODE=Gs`) e ainda não foi lido.
 4. **Os 6 compute** de `a descriptor read only as data`.
 5. **Linha de base do `--validate`**: 17.550 erros de `PSV0` ainda não foram comparados com uma árvore limpa, então não se sabe se são nossos.

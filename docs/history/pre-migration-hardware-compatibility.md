@@ -41,7 +41,7 @@ Para somar a sua máquina: preencha o `STATUS.md` na sua pasta e acrescente uma 
 ## Como medir a sua
 
 ```powershell
-.\main\target\diag\sixm-multiversion.exe translate --list "<seu dump>\shaders.rpf"
+.\main\target\diag\gambiarra-cli.exe translate --list "<seu dump>\shaders.rpf"
 ```
 
 Dá o inventário do que o tradutor consegue converter — 4 minutos, sem abrir o jogo, sem depender da GPU.
@@ -49,7 +49,7 @@ Dá o inventário do que o tradutor consegue converter — 4 minutos, sem abrir 
 Para as capacidades da placa, qualquer ferramenta que leia `D3D12_FEATURE_D3D12_OPTIONS7` (`MeshShaderTier`), `D3D12_FEATURE_SHADER_MODEL` e `D3D12_FEATURE_D3D12_OPTIONS1` (`WaveLaneCountMin`/`Max`) serve. O runtime também registra no log:
 
 ```
-INFO sixm_gpu::host: host wave lanes min=64 max=64
+INFO gambiarra_gpu::host: host wave lanes min=64 max=64
 ```
 
 ---

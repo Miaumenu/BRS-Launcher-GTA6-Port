@@ -1,6 +1,6 @@
 # Tradução offline do pacote de shaders
 
-Comando: `sixm-multiversion.exe translate --list "<dump>\shaders.rpf"`  (27/11/2026, ~255 s)
+Comando: `gambiarra-cli.exe translate --list "<dump>\shaders.rpf"`  (27/11/2026, ~255 s)
 
 ```
 containers   26503 (614 duplicates skipped)

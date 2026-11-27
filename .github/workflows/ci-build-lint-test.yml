@@ -36,12 +36,12 @@ jobs:
       - name: Clippy, diagnostics build
         run: cargo clippy --workspace --all-features --locked
       - name: Build release CLI
-        run: cargo build --release -p sixm-multiversion --locked
+        run: cargo build --release -p gambiarra-cli --locked
       - name: Compile GPU and shader tests
-        run: cargo test -p sixm-gpu --lib --no-run --locked
+        run: cargo test -p gambiarra-gpu --lib --no-run --locked
       - name: Compile shader test target
-        run: cargo test -p sixm-shader --lib --no-run --locked
+        run: cargo test -p gambiarra-shader --lib --no-run --locked
       # Device-dependent tests run in gpu-validation on a trusted GPU host.
       # Keep all other workspace tests, including xtask's asset-policy check.
       - name: Tests (non-GPU workspace packages)
-        run: cargo test --workspace --exclude sixm-gpu --exclude sixm-shader --locked
+        run: cargo test --workspace --exclude gambiarra-gpu --exclude gambiarra-shader --locked

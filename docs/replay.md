@@ -3,20 +3,20 @@
 A diagnostics build can write down one frame's D3D12 work (what the host
 layer sends to the card, and the memory it reads) and run it again without
 the title, to see where the card's time goes and to try changes in seconds.
-Code: `crates/sixm-gpu/src/replay`.
+Code: `crates/gambiarra-gpu/src/replay`.
 
 ## Recording
 
-Off unless `SIXM_RECORD` is set. Build with
-`cargo build --locked --profile diag -p sixm-multiversion --features diagnostics`.
+Off unless `GAMBIARRA_RECORD` is set. Build with
+`cargo build --locked --profile diag -p gambiarra-cli --features diagnostics`.
 
 | variable | meaning |
 |---|---|
-| `SIXM_RECORD=<folder>` | on; the capture goes to `<folder>\capture-<n>` (outside the repository) |
-| `SIXM_RECORD_AT=<seconds>` or `f<frame>` | when: seconds after the device was made, or a number of presents. Unset: only the trigger file |
+| `GAMBIARRA_RECORD=<folder>` | on; the capture goes to `<folder>\capture-<n>` (outside the repository) |
+| `GAMBIARRA_RECORD_AT=<seconds>` or `f<frame>` | when: seconds after the device was made, or a number of presents. Unset: only the trigger file |
 | file `<folder>\go` | when it appears, the capture starts (always watched) |
-| `SIXM_RECORD_FRAMES=<n>` | frames to capture (1) |
-| `SIXM_RECORD_ALWAYS=1` | record lists from the start: needed only if notes say lists were not recorded (a title that submits old lists again) |
+| `GAMBIARRA_RECORD_FRAMES=<n>` | frames to capture (1) |
+| `GAMBIARRA_RECORD_ALWAYS=1` | record lists from the start: needed only if notes say lists were not recorded (a title that submits old lists again) |
 
 At the time given, lists are recorded for a few frames, until a frame's lists
 were all recorded; the next frame is captured: everything sent to the drawing
@@ -40,9 +40,9 @@ buffers, until it is done.
 
 ## Running it
 
-    sixm replay <folder> [--loops 5] [--timing detailed] [experiments]
+    gambiarra replay <folder> [--loops 5] [--timing detailed] [experiments]
 
-`<folder>` is the one given as `SIXM_RECORD` (its last capture) or a
+`<folder>` is the one given as `GAMBIARRA_RECORD` (its last capture) or a
 capture. Each loop puts back what the one before changed and sends the frame
 without waiting between submissions. Reported, from timestamps on the card:
 the frame (first list's start to last list's end), each submission, copies
@@ -58,7 +58,7 @@ with the presented one.
 |---|---|
 | `--compare` | runs the frame unchanged and with the experiments turn by turn, and prints the difference |
 | `--skip-clamps` | no argument clamps and no barriers of their scratch buffers; draws read arguments kept from a first run |
-| `--batch-clamps` / `--batch-clamps 2` | argument clamps in batches, as `SIXM_INDIRECT_BATCH=2` / `=1` does |
+| `--batch-clamps` / `--batch-clamps 2` | argument clamps in batches, as `GAMBIARRA_INDIRECT_BATCH=2` / `=1` does |
 | `--skip-hash-passes` | no compare/rehash passes over card buffers |
 | `--no-barriers` | no unordered-access barriers |
 | `--merge-barriers` | joins barrier calls with no work between them |
@@ -70,11 +70,11 @@ with the presented one.
 | `--no-merge` | copies of what the CPU wrote also overwrite the card's own results (below) |
 | `--skip-shader <text>` | leaves out what runs pipelines with the text in their name or DXIL hash (repeatable) |
 | `--shaders <folder>` | takes shaders from the folder where it has them: `<hash>.dxil`, by the hash the runtime names the title's shader by (a pass of ours: its own DXIL hash); with `--compare --shaders-b <folder>` a second set, turn by turn with the first |
-| `--retranslate <folder>` | only writes that folder: the capture's shaders translated by this build with the `SIXM_*` switches of this run (`--view-limit`, `--raw-views`: the view heap's null slot and where raw views start, as the capture's shaders have them) |
+| `--retranslate <folder>` | only writes that folder: the capture's shaders translated by this build with the `GAMBIARRA_*` switches of this run (`--view-limit`, `--raw-views`: the view heap's null slot and where raw views start, as the capture's shaders have them) |
 | `--no-restore` | leaves what a loop changed, and makes no copies to restore from (of a capture that does not fit in the card's memory with them) |
 | `--pace <ms>` | a wait after each submission sent: the card stands idle between them, as in a game that prepares the next one |
-| `--awake` | keeps the card's clocks up (`SIXM_CARD_AWAKE=1`) |
-| `--breadcrumbs` | the system's breadcrumbs (`SIXM_D3D12_DRED=light`) |
+| `--awake` | keeps the card's clocks up (`GAMBIARRA_CARD_AWAKE=1`) |
+| `--breadcrumbs` | the system's breadcrumbs (`GAMBIARRA_D3D12_DRED=light`) |
 | `--debug-layer` | D3D12's debug layer; its errors in the report |
 
 Use the median of several loops; the first is slower. An experiment that
@@ -84,7 +84,7 @@ same time.
 
 ## What draws a pixel
 
-    sixm replay <folder> --pixel 1234,567 [--of 1280x720] [--lists 40..80]
+    gambiarra replay <folder> --pixel 1234,567 [--of 1280x720] [--lists 40..80]
 
 runs the frame once with copies of the texel under the point after every
 command that can change it, and names each command that did with its pipeline
@@ -125,7 +125,7 @@ report counts them). `--no-merge` runs the copies as recorded.
 | `--watch <id>:<offset>:<bytes>` | which lists (with `--lists`: commands) change those words |
 | `--slots <list>:<command>` | the heap slots its constants name |
 | `--check-written` | that everything the frame changes is put back |
-| `--upcopies` | runs the frame twice: which words the copies of the CPU's sides of card buffers bring that the card holds another value of (those the card wrote alike in both runs are the ones to look at), and which pieces shaders wrote that were not declared as written. The live check is `SIXM_UPCOPY_CHECK=1` (`host/upcheck.rs`) |
+| `--upcopies` | runs the frame twice: which words the copies of the CPU's sides of card buffers bring that the card holds another value of (those the card wrote alike in both runs are the ones to look at), and which pieces shaders wrote that were not declared as written. The live check is `GAMBIARRA_UPCOPY_CHECK=1` (`host/upcheck.rs`) |
 | `--flow <lists>` | what the dispatches (`--flow-draws`: draws too) have bound: pipeline, root arguments, heap slots their constants lead to; no device is made |
 | `--images <folder>` | runs the frame once and saves the textures its shaders write (or `--texture <id>[.<sub>]`, repeatable) as pictures, with least, mean and greatest values; `--raw`: the values too; of a buffer named, its bytes |
 | `--until <list>:<command>` | nothing but barriers after that command |
@@ -157,6 +157,6 @@ The `--diverge` family runs the recorded copies without the merge.
 - The card's clocks are the system's: other programs on the card change the
   times.
 
-Tests: `cargo test -p sixm-gpu --features diagnostics` (`tests/replay.rs`
-runs a small program and compares every byte; `SIXM_TEST_D3D_DEBUG=1` adds
+Tests: `cargo test -p gambiarra-gpu --features diagnostics` (`tests/replay.rs`
+runs a small program and compares every byte; `GAMBIARRA_TEST_D3D_DEBUG=1` adds
 the debug layer) and `tests/replay_big.rs` (`--ignored`).

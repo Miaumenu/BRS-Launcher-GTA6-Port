@@ -8,9 +8,9 @@ Use `ID3D12Device::CheckFeatureSupport` para consultar recursos e níveis, inclu
 
 ## Código comum, perfis e exceções
 
-- O crate `sixm-gpu` mantém o caminho comum D3D12.
+- O crate `gambiarra-gpu` mantém o caminho comum D3D12.
 - `configs/hardware/profiles/` pode receber ajustes medidos para um grupo de GPUs; um perfil não pode declarar como disponível um recurso ausente.
-- Código em `sixm-gpu` específico de fabricante só entra para uma falha reproduzida, identificada por adaptador/driver e coberta por regressão.
+- Código em `gambiarra-gpu` específico de fabricante só entra para uma falha reproduzida, identificada por adaptador/driver e coberta por regressão.
 - Outro backend gráfico, como Vulkan, seria uma implementação separada de API, caso seja de fato desenvolvido e validado.
 
 A documentação da AMD também recomenda consultar a API gráfica para confirmar recursos: suporte pode depender de hardware, sistema e driver, e não apenas da geração da GPU. [AMD AGS](https://gpuopen.com/amd-gpu-services-ags-library/)
@@ -21,4 +21,4 @@ Os diretórios AMD, NVIDIA e Intel começam sem arquivos de ajuste. Um perfil s�
 
 ## Quando criar uma pasta de fabricante no código
 
-Não crie uma cópia do backend por fabricante. Se um defeito específico for demonstrado, adicione uma exceção pequena dentro do crate de GPU, com condição de ativação, motivo, teste de regressão e critério para removê-la. A estrutura interna atual de `sixm-gpu/src` permanece intacta até que uma refatoração de módulos seja necessária.
+Não crie uma cópia do backend por fabricante. Se um defeito específico for demonstrado, adicione uma exceção pequena dentro do crate de GPU, com condição de ativação, motivo, teste de regressão e critério para removê-la. A estrutura interna atual de `gambiarra-gpu/src` permanece intacta até que uma refatoração de módulos seja necessária.
