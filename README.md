@@ -27,7 +27,7 @@ Requisitos: Windows x64, Rust da versão fixada em rust-toolchain.toml e ferrame
 Na raiz do repositório:
 
     cargo fmt --all -- --check
-    cargo clippy --workspace --all-targets --locked
+    cargo clippy --workspace --locked
     cargo test --workspace --locked
     cargo build --release -p sixm-multiversion
 

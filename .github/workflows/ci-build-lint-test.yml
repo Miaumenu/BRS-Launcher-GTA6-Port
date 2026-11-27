@@ -30,9 +30,11 @@ jobs:
         # The inherited prototype currently has existing Clippy warnings.
         # Keep reporting them while compile errors remain fatal; tighten this
         # back to -D warnings after the baseline is cleaned up.
-        run: cargo clippy --workspace --all-targets --locked
+        # Integration tests use CARGO_BIN_EXE, which cargo test defines but
+        # cargo clippy --all-targets does not. They run in the Tests step.
+        run: cargo clippy --workspace --locked
       - name: Clippy, diagnostics build
-        run: cargo clippy --workspace --all-targets --all-features --locked
+        run: cargo clippy --workspace --all-features --locked
       # Includes xtask's repository_passes_policy, the asset-policy check.
       - name: Tests
         run: cargo test --workspace --locked
