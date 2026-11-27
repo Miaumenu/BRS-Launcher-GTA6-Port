@@ -1,0 +1,27 @@
+# O que vale quando nenhum outro preset casa com o host.
+#
+# O [match] é vazio de propósito: este preset casa com qualquer máquina, e
+# justamente por isso perde de qualquer outro que declare uma condição.
+#
+# Não tem [measured] porque não descreve uma máquina: descreve o que fazer
+# quando ainda não se mediu a máquina que está na frente.
+
+[preset]
+id = "baseline"
+name = "Padrão — host ainda não medido"
+summary = """
+Nenhum ajuste. O runtime usa os próprios padrões e consulta o driver para
+tudo, que é o comportamento mais seguro numa placa sobre a qual não se tem
+medição nenhuma. Se a sua placa cair aqui, é porque ela ainda não tem preset
+— e a sua medição é a contribuição mais útil que existe. Ver
+configs/presets/README.md.
+"""
+
+[match]
+# Vazio: casa com tudo, com especificidade zero.
+
+[run]
+# Sem escolha de console: o padrão do CLI decide.
+
+[tuning]
+# Sem ajuste nenhum. Um padrão não deve ligar nada que não foi medido.

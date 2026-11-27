@@ -9,7 +9,7 @@ Use `ID3D12Device::CheckFeatureSupport` para consultar recursos e níveis, inclu
 ## Código comum, perfis e exceções
 
 - O crate `gambiarra-gpu` mantém o caminho comum D3D12.
-- `configs/hardware/profiles/` pode receber ajustes medidos para um grupo de GPUs; um perfil não pode declarar como disponível um recurso ausente.
+- `configs/presets/` guarda os presets por classe de capacidade: um preset escolhe entre caminhos que o adaptador já permite e **não** pode declarar como disponível um recurso ausente. Uma condição sobre capacidade que o driver não respondeu simplesmente não vale, e o preset é descartado em vez de aplicado no escuro. Ver `configs/presets/README.md`.
 - Código em `gambiarra-gpu` específico de fabricante só entra para uma falha reproduzida, identificada por adaptador/driver e coberta por regressão.
 - Outro backend gráfico, como Vulkan, seria uma implementação separada de API, caso seja de fato desenvolvido e validado.
 
