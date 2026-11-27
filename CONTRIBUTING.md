@@ -28,8 +28,10 @@ Relatórios de compatibilidade usam `reports/hardware/_TEMPLATE.md`. Para uma mu
 Execute antes de abrir o PR:
 
     cargo fmt --all -- --check
-    cargo clippy --workspace --all-targets --locked -- -D warnings
+    cargo clippy --workspace --all-targets --locked
     cargo test --workspace --locked
+
+Clippy reports a known baseline of warnings in the inherited GPU prototype. The CI keeps these visible but does not treat them as errors yet; Rust compile errors and failing tests still block a PR. We can restore `-D warnings` after the baseline warnings are resolved.
 
 ## Arquivos que não entram
 

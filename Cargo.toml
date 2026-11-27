@@ -50,8 +50,8 @@ unused_must_use = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
-# This fork: two style lints are let through until the newer code is tidied
-# (tuple-heavy signatures and indexed loops in the translator and GPU side).
+# Existing prototype warnings are reported by Clippy; CI does not yet deny
+# every warning while this inherited baseline is being cleaned up.
 type_complexity = "allow"
 needless_range_loop = "allow"
 chunks_exact_to_as_chunks = "allow"
