@@ -5,36 +5,29 @@
 
 ---
 
-## 0. LEIA PRIMEIRO: nada está commitado
+## 0. Estado do Git
 
-**São 55 arquivos pendentes** na árvore de trabalho — 47 modificados, 727 inserções, mais 4 caminhos novos. O último commit é `f789ca3`, que já existia antes da sessão de 27/11 pela manhã.
-
-Isso significa que **o `git log` e a página do GitHub não mostram nada** do trabalho descrito na seção 3. Se você abriu um chat novo e o repositório parece intocado, é por isso.
-
-Entre as pendências está a correção de um `panic` em tempo de execução (seção 3.1). Commitar é o primeiro passo.
+O repositório público e a pasta local usam o nome **`BRS-Launcher-GTA6-Port`**. O PR #1 já foi mesclado em `main`. O branch `codex/brs-project-update` contém as alterações técnicas posteriores ao merge e será publicado como um PR de acompanhamento; não faça push direto em `main`.
 
 ```powershell
-cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\GambiarraLauncher"; git status --short
+cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\BRS-Launcher-GTA6-Port"; git status --short
 ```
 
 ---
 
 ## 1. Onde o código está
 
-Existe **uma única árvore** de código: esta, `GambiarraLauncher/`.
+Existe **uma única árvore** de código: esta, `BRS-Launcher-GTA6-Port/`.
 
 Antes havia cinco cópias do mesmo código no disco (`cool_fox-main/`, `GambiarraLauncher/main/`, e três árvores de experimento em `_SX-Local/Tools/Gambiarra-*-Test/`). Foram **apagadas** depois de confirmado que esta árvore contém todo o trabalho. Os logs que importavam foram preservados em `_SX-Local/6M-Development/Evidence/victory-run-logs-2026-11-26/`.
 
-Dois repositórios no GitHub, **os dois privados** (owner `Miaumenu`):
+O repositório principal é público (owner `Miaumenu`):
 
 | repositório | o que é |
 |---|---|
-| `Miaumenu/BRS-Launcher-GTA6-Port` | este, o que vale. **Ainda com o nome antigo no GitHub** — ver seção 5. |
-| nome perdido na renomeação em massa | tentativa anterior de estrutura; conteúdo já migrado para cá. O nome real só o dono sabe: esta linha e a de cima ficaram idênticas quando `victory`/`sixm` virou `GambiarraLauncher` em todos os arquivos de uma vez. |
+| `Miaumenu/BRS-Launcher-GTA6-Port` | repositório principal; nome confirmado no GitHub e no disco. |
 
-Privado significa que o link dá **404 para quem não está logado com acesso**. Para liberar: `Settings` → `Collaborators` (convida um a um) ou `Settings` → `Danger Zone` → `Make public`.
-
-**O dump do título** fica em `C:\Users\X\Downloads\GTA6.Xbox.v1.0.2.1-CYBERLEEK` — **209 GB**, 44% do disco. O link `MEU PROPIO LAUNCHER\game-dump` aponta para ele. Medido: o código só lê **`shaders.rpf` (0,38 GB)** e **`game_scarlett_master.exe` (0,11 GB)** pelo nome. Todo o trabalho offline de shader cabe em meio gigabyte; os 209 GB só fazem falta para rodar o título de verdade.
+Os executáveis e arquivos de jogo permanecem fora do repositório. O link local `game-dump` aponta para a pasta configurada na máquina; caminhos pessoais e cópias do jogo não devem ser registrados no Git.
 
 ---
 
@@ -111,7 +104,7 @@ Corrigidos em 5 arquivos. Também: removido do `CHANGES.md` um item "em aberto" 
 
 `cargo fmt --all -- --check` — que é o passo do CI — **passa agora**. Reprovava em 25 arquivos de 4 crates, todos anteriores a esta sessão.
 
-Branch local renomeada: `codex/brs-launcher-gta6-port` → `codex/gambiarra-launcher`, sem vínculo com a remota de nome antigo. Link do dump: `GTA6-Local` → `game-dump`. Texto do `.gambiarra-root` corrigido (dizia "VIctory source tree").
+O branch de acompanhamento é `codex/brs-project-update`. A pasta e o repositório permanecem `BRS-Launcher-GTA6-Port`; os nomes `gambiarra-*` são identificadores internos herdados dos pacotes e do CLI.
 
 ### 3.6 Disco
 
@@ -174,31 +167,25 @@ Motivo: **35% dos shaders do título (9.282 de 26.503) são mesh shaders** e a p
 
 ### Precisa do dono, ninguém mais pode fazer
 
-1. **Commitar as 55 mudanças** (seção 0).
-2. **Renomear o repositório no GitHub.** `Settings` → `Repository name` → `GambiarraLauncher`. Só **depois** disso rode o comando abaixo — antes dele, o `push` passaria a procurar um repositório que não existe:
+1. **Revisar e mesclar o PR de acompanhamento** depois que seus checks passarem.
+2. **Testar em uma GPU compatível** (RDNA 2+ ou Turing+, Shader Model 6.6, mesh shaders, ≥8 GB).
+3. **Exercitar a aplicação automática de preset num `run` real.** `preset list` e `preset show` foram verificados; a aplicação dentro do `run` ainda precisa de validação prática.
+4. **Confirmar as correções em uma segunda máquina.** A wave32 precisa de AMD pré-RDNA (RX 400/500 ou Vega).
 
 ```powershell
-cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\GambiarraLauncher"; git remote set-url origin https://github.com/Miaumenu/GambiarraLauncher.git
+cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\BRS-Launcher-GTA6-Port"; git remote -v
 ```
 
-3. **Apagar a branch remota** `codex/brs-launcher-gta6-port`, que ainda carrega o nome antigo.
-4. **Aceitar os colaboradores** em `Settings` → `Collaborators`. Convite pendente só quem recebeu pode aceitar.
-
-### Trabalho técnico
-
-5. **Rodar numa GPU compatível.** Com 99,98% dos shaders convertendo, é alta a chance de ir muito além. **Nenhuma máquina NVIDIA foi testada — nem uma.**
-6. **Exercitar a aplicação automática de preset num `run` real.** O `preset list` e o `preset show` foram verificados; a aplicação dentro do `run` está escrita e **nunca foi exercida numa corrida**.
-7. **Confirmar as duas correções em segunda máquina.** A wave32 só pode ser validada numa AMD pré-RDNA (RX 400/500, Vega). Os patches agora aplicam (seção 3.3).
-8. **Os 5 compute** de `a descriptor read only as data`. Comece pela sonda `GAMBIARRA_DESC_WHY=1`.
-9. **Linha de base do `--validate`.** Houve 17.550 erros de `PSV0` numa corrida com validação; **não foram comparados com uma árvore limpa**, então não se sabe se são nossos. Sem baseline, o número não quer dizer nada. Atenção: **este repositório não tem o histórico do upstream** (17 commits, o primeiro é "Estrutura inicial"), então a baseline exige clonar `codec-d/cool_fox` e comparar.
-10. **Remoção de device aos ~55 s.** Aconteceu uma vez, não reproduziu com DRED e GPU timing ligados. Nunca investigada a fundo.
+5. **Investigar os cinco compute** de `a descriptor read only as data`, começando por `GAMBIARRA_DESC_WHY=1`.
+6. **Estabelecer a linha de base do `--validate`.** Os erros de `PSV0` ainda precisam ser comparados com uma árvore limpa.
+7. **Investigar a remoção de device** observada após cerca de 55 s; ela ainda não foi reproduzida com DRED e GPU timing ligados.
 
 ### Desenhado, não implementado
 
-11. **Validação automática de preset no CI:** TOML abre, `id` igual ao nome do arquivo, `[measured].report` aponta para arquivo que existe no mesmo PR, e **FPS recusado sem `stage_reached` ≥ `world`**. O repositório já tem `scripts/check-docs.py` e CI, então é extensão do que existe. O fluxo de contribuição está escrito em `configs/presets/README.md`.
-12. **Release com binário pronto.** A economia real para um contribuidor não é baixar menos código, é **não precisar compilar**: um `.zip` com `gambiarra-cli.exe`, a sonda `d3d12-capabilities.exe` e o `D3D12Core.dll` do Agility SDK transforma a contribuição de "uma tarde" em "cinco minutos". Isso também responde ao pedido de "só o que a pessoa vai baixar para usar" — que **não** se faz com `.gitignore` (ele não remove arquivo já rastreado, e `Cargo.toml` é obrigatório para compilar).
-13. **Sparse-checkout: avaliado e descartado.** O repositório tem 20 MiB de histórico e ~8 MB de código versionado. Não há fatia grande para deixar de fora, e brigaria com a pasta única de presets. Se quiser citar algo no README, cite `git clone --depth 1`.
-14. **Launcher visual.** `apps/gambiarra-launcher/` continua sendo só um README.
+8. **Validação automática de preset no CI:** TOML abre, `id` igual ao nome do arquivo, `[measured].report` aponta para arquivo que existe no mesmo PR, e **FPS recusado sem `stage_reached` ≥ `world`**. O repositório já tem `scripts/check-docs.py` e CI, então é extensão do que existe. O fluxo de contribuição está escrito em `configs/presets/README.md`.
+9. **Release com binário pronto.** A economia real para um contribuidor não é baixar menos código, é **não precisar compilar**: um `.zip` com `gambiarra-cli.exe`, a sonda `d3d12-capabilities.exe` e o `D3D12Core.dll` do Agility SDK transforma a contribuição de "uma tarde" em "cinco minutos". Isso também responde ao pedido de "só o que a pessoa vai baixar para usar" — que **não** se faz com `.gitignore` (ele não remove arquivo já rastreado, e `Cargo.toml` é obrigatório para compilar).
+10. **Sparse-checkout: avaliado e descartado.** O repositório tem 20 MiB de histórico e ~8 MB de código versionado. Não há fatia grande para deixar de fora, e brigaria com a pasta única de presets. Se quiser citar algo no README, cite `git clone --depth 1`.
+11. **Launcher visual.** `apps/gambiarra-launcher/` continua sendo só um README.
 
 ---
 
