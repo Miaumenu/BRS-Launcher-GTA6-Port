@@ -219,8 +219,12 @@ fn kind(index: usize) -> u32 {
 
 impl Device {
     fn new(index: usize) -> Device {
+        // The tag's own length, never a number written by hand: the rename in
+        // f789ca3 turned a four-byte tag into `b"gambiarra"` and left `[..4]`,
+        // which panicked for every device the moment one was made.
+        const TAG: &[u8] = b"gambiarra";
         let mut id = [0; 32];
-        id[..4].copy_from_slice(b"gambiarra");
+        id[..TAG.len()].copy_from_slice(TAG);
         id[31] = index as u8 + 1;
         let info = DeviceInfo {
             size: size_of::<DeviceInfo>() as u32,
