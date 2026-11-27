@@ -16,7 +16,7 @@ const MAX_ENCODED_RUN: usize = 512;
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
     "rs", "toml", "md", "txt", "lock", "yml", "yaml", "json", "hlsl", "hlsli", "ps1", "cmd", "sh",
-    "py", "patch",
+    "py", "patch", "cpp", "h", "hpp",
 ];
 const ALLOWED_NAMES: &[&str] = &[
     ".gitignore",
@@ -241,6 +241,7 @@ mod tests {
         assert!(check(".github/CODEOWNERS", b"* @team\n").is_empty());
         assert!(check("scripts/check-docs.py", b"print('ok')\n").is_empty());
         assert!(check("patches/fix.patch", b"--- a/file\n+++ b/file\n").is_empty());
+        assert!(check("tools/gpu-probe/probe.cpp", b"int main() { return 0; }\n").is_empty());
     }
 
     #[test]

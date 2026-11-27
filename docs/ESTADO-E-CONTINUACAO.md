@@ -105,7 +105,7 @@ Variáveis úteis: `SIXM_KEYS=40:Enter` (aperta teclas sem precisar de foco — 
 
 | decisão | situação |
 |---|---|
-| **Renomear para `GambiarraLauncher`** | pedido, **não executado**. Já houve duas renomeações em massa nesta madrugada (`victory*`→`phoenix*`→`sixm*`, ~2.900 ocorrências). Uma terceira mexe em ~2.000 pontos, exige repositório novo no GitHub e refaz a CI que acabou de ser estabilizada. Vale decidir o nome **definitivo** antes de mexer. |
+| **Nome do projeto** | decidido: `BRS-Launcher-GTA6-Port`. A pasta local, o repositório GitHub e o título do PR já usam esse nome. Nomes internos dos crates (`sixm-*`) ficam preservados por enquanto; renomeá-los é uma mudança separada e ampla. |
 | **Ignorar tudo menos esta pasta** | pedido. Falta definir se o `.gitignore` é o da raiz do workspace (`MEU PROPIO LAUNCHER`) ou o deste repositório. |
 | **Trazer do `_SX-Local` o que ajuda** | pedido. Candidatos reais: o laudo de shaders, os logs de corrida preservados, a sonda `d3d12-capabilities.exe`, o loop de execução instrumentado. O resto (Ghidra, assinaturas, análise do REA, `Private/`) é análise do binário e **não ajuda o launcher**. |
 | **Separar o launcher do SixM** | pedido, para depois. |
