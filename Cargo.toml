@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
-# Fixtures are standalone crates built on demand by integration tests.
-exclude = ["tests/fixtures"]
+# These directories are documentation placeholders, not Rust workspace members.
+exclude = ["tests/fixtures", "apps/gta6-pc-launcher"]
 
 [workspace.package]
 version = "0.1.0"
