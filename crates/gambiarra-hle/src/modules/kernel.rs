@@ -428,8 +428,8 @@ fn title_priority(asked: i32) -> i32 {
 /// [`title_priority`].
 pub extern "system" fn SetThreadPriority(thread: *mut c_void, priority: i32) -> i32 {
     static AS_SET: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let as_set =
-        *AS_SET.get_or_init(|| std::env::var_os("GAMBIARRA_TITLE_PRIORITIES").is_some_and(|v| v == "0"));
+    let as_set = *AS_SET
+        .get_or_init(|| std::env::var_os("GAMBIARRA_TITLE_PRIORITIES").is_some_and(|v| v == "0"));
     let priority = if as_set {
         priority
     } else {
@@ -742,10 +742,7 @@ mod tests {
                     .collect::<Vec<_>>()
             }
         };
-        let some = title_argv(
-            "gambiarra-cli.exe",
-            &["-skipToIIS".into(), "-x=1".into()],
-        );
+        let some = title_argv("gambiarra-cli.exe", &["-skipToIIS".into(), "-x=1".into()]);
         assert_eq!(read(&some), ["gambiarra-cli.exe", "-skipToIIS", "-x=1"]);
         assert_eq!(
             read(&title_argv("gambiarra-cli.exe", &[])),

@@ -32,3 +32,13 @@ diagnostics = [
 
 [lints]
 workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Only what the preset probe queries: the adapter's identity and the three
+# capability structures a preset can match on. See src/probe.rs.
+windows = { workspace = true, features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }

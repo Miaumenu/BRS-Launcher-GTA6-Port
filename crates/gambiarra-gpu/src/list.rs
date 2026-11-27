@@ -1144,11 +1144,14 @@ extern "system" fn copy_texture_region(
         // with other textures' bytes wherever nothing was baked, runs n01 and
         // textures-1.)
         static OVER: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-        let over = *OVER.get_or_init(|| match std::env::var("GAMBIARRA_COPY_OVER_TITLE").as_deref() {
-            Ok("0") => 0,
-            Ok("title") => 1,
-            _ => 2,
-        });
+        let over =
+            *OVER.get_or_init(
+                || match std::env::var("GAMBIARRA_COPY_OVER_TITLE").as_deref() {
+                    Ok("0") => 0,
+                    Ok("title") => 1,
+                    _ => 2,
+                },
+            );
         if over != 0
             && crate::texture::title_written(to)
             && !crate::texture::host_wrote(dst.resource as usize)

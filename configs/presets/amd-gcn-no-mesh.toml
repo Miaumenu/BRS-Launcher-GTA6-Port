@@ -1,0 +1,53 @@
+# AMD pré-RDNA: onda de 64 lanes, sem unidade de mesh shader.
+#
+# A única máquina medida até hoje (Radeon RX 550) cai aqui, mas o preset não é
+# dela: ele vale para a classe inteira — RX 400/500, Vega e qualquer GCN cujo
+# driver reporte MeshShaderTier ausente e onda mínima de 64.
+
+[preset]
+id = "amd-gcn-no-mesh"
+name = "AMD GCN (Polaris/Vega) — sem mesh shader"
+summary = """
+Placa pré-RDNA. O título carrega, cria o device D3D12 e apresenta frames, e a
+arte de carregamento sai correta — mas o mundo nunca renderiza: 35% dos
+shaders do título são mesh shaders e esta classe de placa não tem a unidade.
+O tradutor converte os 8.765 programas de mesh perfeitamente; não há onde
+executá-los. Preset serve para diagnóstico, não para jogar.
+"""
+
+[match]
+vendor = "amd"
+mesh_shader = false
+shader_model_max = "6.5"
+wave_lanes_min = 64
+
+[run]
+# A placa medida tem 2 GB. O series-s exige menos memória que o series-x.
+# Escolha pela capacidade, não medição: as corridas registradas usaram
+# series-x e nunca passaram da arte de carregamento em nenhum dos dois.
+console = "series-s"
+
+[tuning]
+# Estimativa de luz indireta em vez das estruturas de ray tracing reais: nesta
+# classe de placa o construtor de BVH custaria cerca de 40 ms a mais por frame
+# (docs/fork-ray-tracing.md), e aqui não há orçamento para isso.
+ambient = 1
+bvh_builder = false
+# 2 GB de VRAM: teto de textura abaixo do total, deixando espaço para o resto.
+texture_budget_mb = 1400
+levels_on_demand = true
+display_mode = "borderless"
+
+# A evidência. Valores de reports/hardware/rx550-2026-11-27.md e do STATUS
+# preservado em reports/archive/legacy-contributor-workflow/.
+[measured]
+gpu = "Radeon RX 550 / 550 Series"
+vram_mb = 2027
+driver = "AMD 31.0.12029.10015"
+os = "Windows 10.0.19045"
+# Desenha a arte de carregamento em cor cheia; nenhum frame chegou a 500 draws,
+# então o mundo nunca começou. Por isso não há `fps` — e a automação recusaria
+# um, porque abaixo de `world` um número de FPS mede tela vazia.
+stage_reached = "loading-art"
+report = "reports/hardware/rx550-2026-11-27.md"
+date = "2026-11-27"

@@ -313,7 +313,8 @@ fn of_builder(shaders: &[Arc<Shader>]) -> bool {
 pub(crate) fn builder_quarantined(this: This) -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     is_builder(this)
-        && *ON.get_or_init(|| std::env::var_os("GAMBIARRA_BVH_QUARANTINE").is_some_and(|v| v == "1"))
+        && *ON
+            .get_or_init(|| std::env::var_os("GAMBIARRA_BVH_QUARANTINE").is_some_and(|v| v == "1"))
 }
 
 /// Whether the title's pipeline `this` is one of the structure builder's.
@@ -342,7 +343,8 @@ pub(crate) fn builder_rests(why: &'static str) {
 #[cfg(windows)]
 pub(crate) fn builder_runs() -> bool {
     static ALLOWED: OnceLock<bool> = OnceLock::new();
-    if !*ALLOWED.get_or_init(|| std::env::var_os("GAMBIARRA_BVH_BUILDER").is_some_and(|v| v == "1")) {
+    if !*ALLOWED.get_or_init(|| std::env::var_os("GAMBIARRA_BVH_BUILDER").is_some_and(|v| v == "1"))
+    {
         return false;
     }
     let mut b = BUILDER.lock().unwrap_or_else(|e| e.into_inner());
@@ -499,7 +501,10 @@ fn parse_skip_hashes(value: &str) -> Vec<String> {
             if hash.len() == 16 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 Some(hash.to_ascii_lowercase())
             } else {
-                tracing::warn!(hash, "GAMBIARRA_SKIP_PIPELINES expects 16-digit shader hashes");
+                tracing::warn!(
+                    hash,
+                    "GAMBIARRA_SKIP_PIPELINES expects 16-digit shader hashes"
+                );
                 None
             }
         })

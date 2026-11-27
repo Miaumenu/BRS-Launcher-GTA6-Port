@@ -212,6 +212,7 @@ dependencies = [
  "gambiarra-shader",
  "memchr",
  "walkdir",
+ "windows",
 ]
 
 [[package]]

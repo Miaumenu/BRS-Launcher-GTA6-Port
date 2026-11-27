@@ -5,6 +5,8 @@
 
 mod census;
 mod inspect;
+mod preset;
+mod probe;
 #[cfg(all(windows, feature = "diagnostics"))]
 mod replay;
 mod run;
@@ -140,8 +142,15 @@ enum Command {
         #[arg(long)]
         execute: bool,
         /// The console model the title sees (device type, memory).
-        #[arg(long, value_enum, default_value_t = Console::SeriesX)]
-        console: Console,
+        /// Unset: what the chosen preset asks for, else series-x.
+        #[arg(long, value_enum)]
+        console: Option<Console>,
+        /// Use this preset instead of the one matched from the host.
+        #[arg(long, value_name = "ID")]
+        preset: Option<String>,
+        /// Apply no preset at all.
+        #[arg(long, conflicts_with = "preset")]
+        no_preset: bool,
         /// Arguments for the title, after `--` (it reads the whole command
         /// line; a title that relaunches itself passes some).
         #[arg(last = true)]
@@ -153,6 +162,11 @@ enum Command {
     Replay(replay::Replay),
     /// Show the resolved configuration and check it.
     Config,
+    /// Which settings this host gets, and the evidence behind them.
+    Preset {
+        #[command(subcommand)]
+        command: preset::Command,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -234,14 +248,37 @@ fn main() -> Result<()> {
             strict,
             execute,
             console,
+            preset: wanted,
+            no_preset,
             title_args,
         } => {
+            // Before anything reads the settings it puts in the environment.
+            let applied = if no_preset {
+                None
+            } else {
+                preset::apply(wanted.as_deref())?
+            };
+            let console = resolve_console(console, applied.as_ref());
             gambiarra_hle::runtime::set_title_args(title_args);
             run::run(&exe, unimplemented, strict, execute, console)
         }
         #[cfg(all(windows, feature = "diagnostics"))]
         Command::Replay(options) => replay::run(options),
         Command::Config => show_config(),
+        Command::Preset { command } => preset::run(command),
+    }
+}
+
+/// The console to use: what the user asked for, else what the preset asks
+/// for, else the series-x the runtime has always defaulted to.
+fn resolve_console(asked: Option<Console>, applied: Option<&preset::Applied>) -> Console {
+    if let Some(asked) = asked {
+        return asked;
+    }
+    match applied.and_then(|a| a.console) {
+        Some(gambiarra_core::preset::Console::SeriesS) => Console::SeriesS,
+        Some(gambiarra_core::preset::Console::SeriesX) => Console::SeriesX,
+        None => Console::SeriesX,
     }
 }
 

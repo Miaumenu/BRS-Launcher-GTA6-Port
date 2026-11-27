@@ -135,8 +135,9 @@ fn loads_binds_and_calls_probe() {
         title_dir.path().join("gambiarra-probe-title.dll"),
     )
     .unwrap();
-    let dlls = gambiarra_loader::load_title_dlls(image.info(), title_dir.path(), dir.path(), &|_| true)
-        .unwrap();
+    let dlls =
+        gambiarra_loader::load_title_dlls(image.info(), title_dir.path(), dir.path(), &|_| true)
+            .unwrap();
     let names: Vec<_> = dlls.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, ["gambiarra-probe-title.dll"]);
     let resolver = WithTitleDlls {
@@ -233,7 +234,10 @@ fn loads_binds_and_calls_probe() {
             "DllMain: {before:#x} → {after:#x}"
         );
         // It has static TLS, so Windows would refuse too.
-        assert_eq!(gambiarra_loader::disable_thread_calls(image.base()), Some(false));
+        assert_eq!(
+            gambiarra_loader::disable_thread_calls(image.base()),
+            Some(false)
+        );
         assert_eq!(gambiarra_loader::disable_thread_calls(1), None);
 
         // `FreeLibrary`'s notice, as a failed late load sends it.

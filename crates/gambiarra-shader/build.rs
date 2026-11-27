@@ -68,5 +68,8 @@ fn main() {
         state[0], state[1]
     );
     let joined: Vec<_> = switches.into_iter().collect();
-    println!("cargo:rustc-env=GAMBIARRA_SHADER_SWITCHES={}", joined.join(","));
+    println!(
+        "cargo:rustc-env=GAMBIARRA_SHADER_SWITCHES={}",
+        joined.join(",")
+    );
 }

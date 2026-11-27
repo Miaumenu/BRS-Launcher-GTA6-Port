@@ -590,7 +590,8 @@ pub fn emit(
                 // ([`ir::without_skips`], `deep`): most of the body is then code every
                 // lane runs, where the two host waves can exchange.
                 // (`GAMBIARRA_WAVE_DEEP_SKIPS=0` and `GAMBIARRA_WAVE_WIDE=0` turn the two off.)
-                let deep_on = std::env::var_os("GAMBIARRA_WAVE_DEEP_SKIPS").is_none_or(|v| v != "0");
+                let deep_on =
+                    std::env::var_os("GAMBIARRA_WAVE_DEEP_SKIPS").is_none_or(|v| v != "0");
                 let deep = if deep_on {
                     form(
                         "without skips, scalars followed",
@@ -1128,7 +1129,8 @@ mod tests {
         if !dxc.exists() {
             return None;
         }
-        let file = std::env::temp_dir().join(format!("gambiarra-interp-{}.dxil", std::process::id()));
+        let file =
+            std::env::temp_dir().join(format!("gambiarra-interp-{}.dxil", std::process::id()));
         std::fs::write(&file, container).ok()?;
         let out = std::process::Command::new(dxc)
             .arg("-dumpbin")

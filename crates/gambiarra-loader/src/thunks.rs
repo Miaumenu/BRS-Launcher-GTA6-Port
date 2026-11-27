@@ -181,7 +181,8 @@ mod tests {
             .unwrap();
         assert!(!out.status.success(), "the trap ends the process");
         let text = std::fs::read_to_string(&log).unwrap_or_default();
-        let named = text.contains("GambiarraLauncher: unimplemented import probe.dll!Missing called");
+        let named =
+            text.contains("GambiarraLauncher: unimplemented import probe.dll!Missing called");
         assert!(named, "crash log: {text:?}");
     }
 }

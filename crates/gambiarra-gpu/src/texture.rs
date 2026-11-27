@@ -1407,8 +1407,9 @@ impl Staging {
         // The guard saw no write: a change the hash finds came another way.
         let mut blind = false;
         if !alone
-            && *GUARD
-                .get_or_init(|| std::env::var_os("GAMBIARRA_TEXTURE_GUARD").is_none_or(|v| v != "0"))
+            && *GUARD.get_or_init(|| {
+                std::env::var_os("GAMBIARRA_TEXTURE_GUARD").is_none_or(|v| v != "0")
+            })
             && let Some((now, written)) =
                 waited(1, || crate::watch::writes(start, start + size, true))
         {
@@ -1900,7 +1901,8 @@ pub(crate) fn mapped_bytes(at: *const u8, len: usize) -> u64 {
     // 64 KiB of the texture (and once more for each that is not there).
     // `GAMBIARRA_MAPPED_BY_VIEWS=0`: the host is asked, as before.
     static BY_VIEWS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    if *BY_VIEWS.get_or_init(|| std::env::var_os("GAMBIARRA_MAPPED_BY_VIEWS").is_none_or(|v| v != "0"))
+    if *BY_VIEWS
+        .get_or_init(|| std::env::var_os("GAMBIARRA_MAPPED_BY_VIEWS").is_none_or(|v| v != "0"))
         && let Some(there) = crate::inplace::shown_bytes(start, len)
     {
         return there;

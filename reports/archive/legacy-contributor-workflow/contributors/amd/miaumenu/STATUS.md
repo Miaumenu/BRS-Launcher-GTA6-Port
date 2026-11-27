@@ -36,7 +36,7 @@ no host pipeline: the host GPU has no mesh shaders (or no shader model 6.6)
 
 **Reprovado para RX 550, por falta de recurso de hardware.** Não é ajuste de configuração nem bug de tradutor. Precisa de GPU com mesh shaders e SM 6.6 — RDNA 2+ ou Turing+.
 
-Isto **não** diz que o GambiarraLauncher não funciona: diz que esta placa não serve para responder essa pergunta. Com 99,2% dos shaders convertendo, quem tiver hardware compatível tem boa chance de ir muito mais longe.
+Isto **não** diz que o GambiarraLauncher não funciona: diz que esta placa não serve para responder essa pergunta. Com 99,98% dos shaders convertendo, quem tiver hardware compatível tem boa chance de ir muito mais longe.
 
 ## Armadilhas que custaram tempo aqui
 

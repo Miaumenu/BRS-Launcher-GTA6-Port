@@ -4244,7 +4244,9 @@ impl Shadow {
     /// title's that arrived between the refresh and the look.
     fn refresh_check(&self, from: usize, to: usize) {
         static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if !*ON.get_or_init(|| std::env::var_os("GAMBIARRA_REFRESH_CHECK").is_some_and(|v| v == "1")) {
+        if !*ON
+            .get_or_init(|| std::env::var_os("GAMBIARRA_REFRESH_CHECK").is_some_and(|v| v == "1"))
+        {
             return;
         }
         const SAMPLE: usize = 256;
@@ -4764,7 +4766,8 @@ impl Shadow {
     pub(crate) fn card_hash_size(&self) -> u64 {
         static OWN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let size = self.card.as_ref().map_or(self.len, |c| c.size);
-        if *OWN.get_or_init(|| std::env::var_os("GAMBIARRA_CARD_HASH_LEN").is_none_or(|v| v != "0")) {
+        if *OWN.get_or_init(|| std::env::var_os("GAMBIARRA_CARD_HASH_LEN").is_none_or(|v| v != "0"))
+        {
             self.len.next_multiple_of(16).min(size)
         } else {
             size

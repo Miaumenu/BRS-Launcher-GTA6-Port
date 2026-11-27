@@ -137,7 +137,10 @@ mod tests {
         let a = parse("10, GAMBIARRA_A,GAMBIARRA_B").unwrap();
         assert_eq!(
             (a.seconds, a.switches),
-            (10.0, vec!["GAMBIARRA_A".to_string(), "GAMBIARRA_B".to_string()])
+            (
+                10.0,
+                vec!["GAMBIARRA_A".to_string(), "GAMBIARRA_B".to_string()]
+            )
         );
         assert!(parse("10").is_none());
         assert!(parse("x,GAMBIARRA_A").is_none());

@@ -282,12 +282,14 @@ pub(crate) fn card_waited(us: u64, what: impl FnOnce() -> String) {
 /// what another has not finished writing.
 pub(crate) fn barrier_test() -> u8 {
     static TEST: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-    *TEST.get_or_init(|| match std::env::var("GAMBIARRA_BARRIER_TEST").as_deref() {
-        Ok("groups") => 1,
-        Ok("indirect") => 2,
-        Ok("both") => 3,
-        _ => 0,
-    })
+    *TEST.get_or_init(
+        || match std::env::var("GAMBIARRA_BARRIER_TEST").as_deref() {
+            Ok("groups") => 1,
+            Ok("indirect") => 2,
+            Ok("both") => 3,
+            _ => 0,
+        },
+    )
 }
 
 /// Per range compared after a submission (start, length): times, and the

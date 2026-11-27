@@ -1,0 +1,107 @@
+# Gabarito de preset — copie este arquivo e preencha.
+#
+# Um preset é só DADO: diz quais ajustes uma classe de hardware recebe. Ele
+# nunca liga um recurso que a placa não tem — o bloco [match] apenas escolhe
+# entre caminhos que o driver já permitiu.
+#
+# Nome do arquivo = o `id` + `.toml`. Arquivos começando com `_` são ignorados.
+# Este arquivo é lido pelos testes, então ele é sempre um preset válido.
+
+[preset]
+# Minúsculas, dígitos e hífens. Tem de ser igual ao nome do arquivo.
+# Descreva a CLASSE de capacidade, não o modelo da placa: um arquivo serve a
+# todas as placas parecidas, e é isso que evita vinte arquivos quase iguais.
+id = "schema"
+name = "Gabarito (não é um preset de verdade)"
+# Para que serve e o que assume. Texto livre.
+summary = """
+Este arquivo existe para ser copiado. O `[match]` vazio abaixo faria ele
+casar com qualquer host, então não o deixe vazio num preset real.
+"""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [match] — quando este preset se aplica.
+#
+# Campo ausente = "não importa". Campo presente tem de valer.
+#
+# Regra que não se negocia: uma condição sobre capacidade que o driver NÃO
+# respondeu não vale. Nunca se chuta hardware. Se a consulta falhou, este
+# preset é descartado em vez de aplicado no escuro.
+#
+# Entre os presets cujas condições todas valem, ganha o que declara MAIS
+# condições. Empate é desfeito pelo `id`, então toda máquina escolhe igual.
+# ─────────────────────────────────────────────────────────────────────────────
+[match]
+# amd | nvidia | intel — vem do VendorId do adaptador, não do nome dele.
+# vendor = "amd"
+
+# O adaptador tem unidade de mesh shader (MeshShaderTier).
+# mesh_shader = false
+
+# O shader model mais alto do host é no máximo / no mínimo este.
+# Comparado como par de números, então 6.10 está acima de 6.9.
+# shader_model_max = "6.5"
+# shader_model_min = "6.6"
+
+# A onda mais estreita que a GPU roda (WaveLaneCountMin) tem ao menos tantos
+# lanes. 64 seleciona AMD pré-RDNA; 32 inclui RDNA e NVIDIA.
+# wave_lanes_min = 64
+
+# O host tem MENOS memória de vídeo que isto.
+# vram_mb_below = 4096
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [run] — como o título é iniciado.
+# ─────────────────────────────────────────────────────────────────────────────
+[run]
+# series-x | series-s. O series-s exige menos memória.
+# console = "series-s"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [tuning] — os ajustes.
+#
+# Cada campo aqui corresponde a uma chave que o runtime JÁ lê. Campo que o
+# código não conhece é recusado na leitura, de propósito: um preset não pode
+# prometer coisa que o runtime ignora.
+# ─────────────────────────────────────────────────────────────────────────────
+[tuning]
+# Luz indireta estimada, custa quase nada. (GAMBIARRA_AMBIENT)
+# ambient = 1
+
+# As estruturas de ray tracing de verdade. Na única placa medida custou cerca
+# de 40 ms a mais por frame — ver docs/fork-ray-tracing.md. Desligado por
+# padrão. Numa placa fraca prefira `ambient` acima. (GAMBIARRA_BVH_BUILDER)
+# bvh_builder = false
+
+# Teto de memória para texturas. (GAMBIARRA_TEXTURE_BUDGET_MB)
+# texture_budget_mb = 1400
+
+# Carrega níveis de mipmap conforme a necessidade. (GAMBIARRA_LEVELS_ON_DEMAND)
+# levels_on_demand = true
+
+# windowed | borderless | exclusive. (GAMBIARRA_DISPLAY_MODE)
+# display_mode = "borderless"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [measured] — a evidência. É isto que separa preset de chute.
+#
+# Obrigatório num preset de verdade (só o baseline e este gabarito não têm).
+# O `report` tem de apontar para um arquivo que EXISTE no repositório, e vem
+# no mesmo pull request.
+#
+# A regra central: `fps` só pode ser preenchido se `stage_reached` for `world`
+# ou `playable`. Abaixo disso o mundo não foi desenhado, então um número de
+# FPS estaria medindo tela vazia. A automação recusa.
+#
+# A escada, em ordem:
+#   compiles → device → frame → loading-art → menu → world → playable
+# ─────────────────────────────────────────────────────────────────────────────
+# [measured]
+# gpu           = "Nome como o adaptador se identifica"
+# vram_mb       = 8192
+# driver        = "versão do driver"
+# os            = "Windows 10.0.19045"
+# stage_reached = "world"
+# fps           = 31.5
+# report        = "reports/hardware/minha-placa-2026-11-27.md"
+# date          = "2026-11-27"
