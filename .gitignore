@@ -1,0 +1,32 @@
+# build
+target/
+**/target/
+*.pdb
+*.exe
+*.dll
+*.rlib
+*.rmeta
+
+# dados do jogo: nada disso entra aqui
+*.rpf
+*.xvd
+game_scarlett_master*
+*.opdownload
+appdata*.rpf
+
+# caches e saida de corrida
+runs/
+frames/
+*.stderr.log
+*.stdout.log
+*.analysis.json
+*.events.jsonl
+cache*/
+VIctoryCache*/
+SixMCache*/
+
+# ambiente
+.vscode/
+.idea/
+__pycache__/
+*.pyc
