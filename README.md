@@ -10,7 +10,7 @@ Este repositório é compartilhado: várias pessoas testam em hardwares diferent
 
 1. **[CONTRIBUTING.md](CONTRIBUTING.md)** — as regras. Leia inteiro antes do primeiro commit; existem por um motivo concreto.
 2. **[docs/HARDWARE.md](docs/HARDWARE.md)** — o que já foi testado, em que placa, e até onde chegou. Veja se a sua máquina já tem resultado antes de repetir o trabalho.
-3. `contributors/_TEMPLATE/` — copie para `contributors/<seu-nome>/` e preencha o `STATUS.md`.
+3. `contributors/_TEMPLATE/` — copie para `contributors/amd/<seu-nome>/` ou `contributors/nvidia/<seu-nome>/` e preencha o `STATUS.md`. As pastas são por fabricante porque é a GPU que decide o resultado; cada uma tem o seu `README.md` com o que esperar por geração.
 
 > **A regra de ouro:** ninguém edita `main/` direto. Você trabalha só dentro da sua pasta em `contributors/`.
 

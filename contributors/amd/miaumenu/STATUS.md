@@ -49,4 +49,4 @@ Isto **não** diz que o SixMultiVersion não funciona: diz que esta placa não s
 
 - `logs/capacidades-d3d12.txt` — a sonda da placa
 - `logs/traducao-offline.txt` — o resultado da tradução do pacote inteiro
-- `../../docs/INVESTIGACAO-SHADERS.md` — a investigação completa
+- `../../../docs/INVESTIGACAO-SHADERS.md` — a investigação completa

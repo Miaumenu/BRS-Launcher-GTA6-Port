@@ -8,7 +8,7 @@ Leia esta página inteira antes do primeiro commit. As regras são poucas e exis
 
 ## A regra de ouro
 
-> **`main/` ninguém edita direto. Você trabalha só dentro de `contributors/<seu-nome>/`.**
+> **`main/` ninguém edita direto. Você trabalha só dentro de `contributors/<fabricante>/<seu-nome>/`.**
 
 `main/` só muda quando uma mudança já foi testada por alguém e **promovida** (ver §5). Quem promove abre um PR; não se escreve em `main/` por commit direto.
 
@@ -26,11 +26,20 @@ SixMultiVersion/
 │   └─ HARDWARE.md           tabela do que já foi testado e em que placa
 └─ contributors/
     ├─ _TEMPLATE/            copie esta pasta para começar
-    └─ <seu-nome>/
-        ├─ CHANGES.md        o que você mudou e por quê
-        ├─ STATUS.md         sua máquina e até onde chegou
-        ├─ patches/          seus .patch contra main/
-        └─ logs/             as evidências (logs recortados, não brutos)
+    ├─ amd/                  quem testa em GPU AMD
+    │   └─ <seu-nome>/
+    └─ nvidia/               quem testa em GPU NVIDIA
+        └─ <seu-nome>/
+            ├─ CHANGES.md    o que você mudou e por quê
+            ├─ STATUS.md     sua máquina e até onde chegou
+            ├─ patches/      seus .patch contra main/
+            └─ logs/         as evidências (logs recortados, não brutos)
+
+A pasta é **por fabricante, e dentro dela por pessoa**, porque o que decide o
+resultado aqui é a GPU: a mudança que salva uma AMD GCN não faz diferença nenhuma
+numa NVIDIA. Agrupar assim deixa óbvio o que já foi coberto e o que falta. Outro
+fabricante (Intel, por exemplo) ganha a sua pasta quando aparecer a primeira
+pessoa com a placa — veja o `README.md` dentro de `amd/` e `nvidia/`.
 ```
 
 ### Por que patches e não uma cópia inteira do código
@@ -48,7 +57,7 @@ Sim, o Git já faz isso sozinho com branches. A pasta por pessoa existe porque a
 ```powershell
 git clone https://github.com/Miaumenu/SixMultiVersion.git
 cd SixMultiVersion
-Copy-Item -Recurse contributors\_TEMPLATE contributors\<seu-nome>
+Copy-Item -Recurse contributors\_TEMPLATE contributors\<amd ou nvidia>\<seu-nome>
 ```
 
 Preencha `STATUS.md` **antes** de mexer em código. Sem a sua máquina anotada, o seu resultado não significa nada para os outros.
@@ -61,7 +70,7 @@ Preencha `STATUS.md` **antes** de mexer em código. Sem a sua máquina anotada, 
 2. Quando funcionar, gere o patch:
 
    ```powershell
-   git diff > ..\SixMultiVersion\contributors\<seu-nome>\patches\0001-descricao-curta.patch
+   git diff > ..\SixMultiVersion\contributors\<fabricante>\<seu-nome>\patches\0001-descricao-curta.patch
    ```
 
 3. Numere os patches em ordem (`0001-`, `0002-`…). Um patch = uma mudança com um motivo.
@@ -70,8 +79,8 @@ Preencha `STATUS.md` **antes** de mexer em código. Sem a sua máquina anotada, 
 Para aplicar o patch de outra pessoa:
 
 ```powershell
-git apply --check contributors\<nome>\patches\0001-xxx.patch   # confere antes
-git apply contributors\<nome>\patches\0001-xxx.patch
+git apply --check contributors\<fabricante>\<nome>\patches\0001-xxx.patch   # confere antes
+git apply contributors\<fabricante>\<nome>\patches\0001-xxx.patch
 ```
 
 ---
