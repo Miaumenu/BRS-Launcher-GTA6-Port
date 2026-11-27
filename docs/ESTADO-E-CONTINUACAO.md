@@ -51,7 +51,7 @@ Por decisão do dono, **o nome do título não aparece em nenhum arquivo** — u
 id[..4].copy_from_slice(b"gambiarra");
 ```
 
-Quatro bytes de destino, nove de origem — `panic` garantido. Entrou no commit **`f789ca3`**, a renomeação em massa: o nome antigo era `sixm`, de quatro letras, e a substituição trocou o literal sem corrigir a largura. **Não era só teste:** `Device::new` é chamado em `std::array::from_fn(Device::new)` (linha 397), no caminho de execução real, então qualquer corrida que inicializasse o GameInput morria ali — teclado e controle.
+Quatro bytes de destino, nove de origem — `panic` garantido. Entrou no commit **`f789ca3`**, a renomeação em massa: o literal anterior tinha quatro caracteres, enquanto o novo tinha nove, e a substituição não corrigiu a largura. **Não era só teste:** `Device::new` é chamado em `std::array::from_fn(Device::new)` (linha 397), no caminho de execução real, então qualquer corrida que inicializasse o GameInput morria ali — teclado e controle.
 
 Corrigido usando o tamanho da própria etiqueta, para não poder quebrar de novo numa renomeação futura. `gambiarra-hle` foi de **144 passando / 6 falhando** para **152 passando / 0 falhando**.
 
@@ -85,9 +85,9 @@ Precedência: o que o usuário define na mão sempre ganha do preset. `--preset 
 
 ### 3.3 Patches de contribuição regerados
 
-Os dois patches em `reports/archive/legacy-contributor-workflow/contributors/amd/miaumenu/patches/` apontavam para `crates/sixm-shader/` e `crates/sixm-gpu/` e **não aplicavam em lugar nenhum**. Regerados contra esta árvore: aplicam e revertem limpo, com cabeçalho dizendo a árvore-alvo. Verificação de ida e volta: aplicados numa cópia limpa, reproduzem a árvore byte a byte nos 6 arquivos.
+Os dois patches em `reports/archive/legacy-contributor-workflow/contributors/amd/miaumenu/patches/` apontavam para caminhos de uma árvore anterior e **não aplicavam nesta árvore**. Regerados para os caminhos atuais: aplicam e revertem limpo, com cabeçalho dizendo a árvore-alvo. Verificação de ida e volta: aplicados numa cópia limpa, reproduzem a árvore byte a byte nos 6 arquivos.
 
-⚠️ **Isto contraria uma decisão deliberada.** A mensagem de `f789ca3` diz que os patches não foram renomeados de propósito, porque "valem contra os nomes antigos". O raciocínio só funcionaria se existisse uma árvore `sixm-*`, e não existe: esta árvore usa `gambiarra-*` e o upstream usa `victory-*`. Se preferir o critério original, é reversível.
+⚠️ **Isto contraria uma decisão deliberada.** A mensagem de `f789ca3` diz que os patches não foram renomeados de propósito, porque "valem contra os nomes antigos". Essa justificativa só faria sentido se a árvore anterior ainda fosse um alvo necessário; esta árvore usa `gambiarra-*`. Se preferir o critério original, é reversível.
 
 O `0002` **não está faltando**: foi revertido de propósito (hipótese derrubada), como o `CHANGES.md` registra.
 
