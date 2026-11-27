@@ -1,0 +1,211 @@
+--- a/crates/sixm-shader/src/emit/lower.rs
++++ b/crates/sixm-shader/src/emit/lower.rs
+@@ -1047,6 +1047,18 @@
+     HOST_MAX_WAVE.store(lanes, std::sync::atomic::Ordering::Relaxed);
+ }
+ 
++/// The narrowest wave the host GPU runs (0: not known – no host-specific forms); see
++/// [`set_host_min_wave`].
++static HOST_MIN_WAVE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
++
++/// The host GPU's `WaveLaneCountMin`: 64 (the vendor's cards before RDNA, which have no
++/// 32-lane waves) refuses `WaveSize(32)`, so a console wave32 compute program whose group
++/// is one wave is declared without a wave size and runs in the first 32 lanes of a 64-lane
++/// wave, where the lanes that are elsewhere contribute nothing.
++pub fn set_host_min_wave(lanes: u32) {
++    HOST_MIN_WAVE.store(lanes, std::sync::atomic::Ordering::Relaxed);
++}
++
+ thread_local! {
+     /// See [`take_needs`].
+     static NEEDS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+@@ -1122,10 +1134,16 @@
+ }
+ 
+ /// What the translator was told of the host, for a cache's key: the widest
+-/// wave, the view heap's limit, where the raw twins of its views start, and
+-/// what it writes for the console's own hardware.
+-pub fn host_settings() -> [u32; 4] {
+-    [host_max_wave(), super::shader::view_heap_limit(), super::shader::raw_views(), host_rdna()]
++/// and the narrowest wave, the view heap's limit, where the raw twins of its
++/// views start, and what it writes for the console's own hardware.
++pub fn host_settings() -> [u32; 5] {
++    [
++        host_max_wave(),
++        host_min_wave(),
++        super::shader::view_heap_limit(),
++        super::shader::raw_views(),
++        host_rdna(),
++    ]
+ }
+ 
+ static HOST_RDNA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+@@ -1185,6 +1203,21 @@
+     pub(super) static TEST_HOST_WAVE: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+ }
+ 
++pub(super) fn host_min_wave() -> u32 {
++    #[cfg(test)]
++    if let Some(lanes) = TEST_HOST_MIN_WAVE.get() {
++        return lanes;
++    }
++    HOST_MIN_WAVE.load(std::sync::atomic::Ordering::Relaxed)
++}
++
++#[cfg(test)]
++thread_local! {
++    /// A test's narrowest host wave, for its thread only ([`set_host_min_wave`] is the
++    /// process's).
++    pub(super) static TEST_HOST_MIN_WAVE: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
++}
++
+ pub(super) fn reads_mask_as_data(st: &Structured, i: &Inst) -> bool {
+     // A scalar select uses the condition of the whole guest wave, even
+     // when the preceding mask operation has no scalar-dword consumers.
+@@ -1544,6 +1577,18 @@
+             }
+             if console_lanes || one_wave && s.lds_dwords > 0 {
+                 s.wave_size = Some(wave);
++                // A host whose narrowest wave is 64 lanes (the vendor's cards before RDNA)
++                // refuses `WaveSize(32)`. A console wave32 program whose group is one wave
++                // runs as it is in the first 32 lanes of a 64-lane wave: the lanes that are
++                // elsewhere are not in the wave's ballots, reductions or lane reads, which is
++                // what the console's 32-lane wave does. Only the declaration goes; the
++                // translation keeps the console's 32 lanes. A group over 32 threads would put
++                // two console waves in one host wave, where cross-lane code would reach the
++                // other wave's lanes: that keeps the declaration and the host refuses it,
++                // rather than running with the lanes of both.
++                if wave == 32 && host_min_wave() > 32 && group <= 32 {
++                    s.declare_wave = false;
++                }
+             }
+         }
+         // The title's barriers a thread of the group may never reach, which
+@@ -2441,7 +2486,8 @@
+         let root_srvs = self.s.root_srvs.iter().map(|r| r.0).collect();
+         let root_uavs = self.s.root_uavs.iter().map(|r| r.0).collect();
+         let cmp_samplers = self.s.cmp_samplers;
+-        let wave_size = self.s.wave_size;
++        // what the host is asked for, which a wave the host has no form of is not
++        let wave_size = self.s.wave_size.filter(|_| self.s.declare_wave);
+         Ok(Lowered {
+             wave_size,
+             cmp_samplers,
+--- a/crates/sixm-shader/src/emit/shader.rs
++++ b/crates/sixm-shader/src/emit/shader.rs
+@@ -229,6 +229,11 @@
+     pub threads: Option<[u32; 3]>,
+     /// The wave size a compute shader requires (`WaveSize`).
+     pub wave_size: Option<u32>,
++    /// Whether [`Self::wave_size`] is declared to the host (DXIL's entry
++    /// properties and `PSV0`). False where the host has no wave that narrow
++    /// and the program runs in a wider wave's first lanes: the translation
++    /// still uses the console's wave size.
++    pub declare_wave: bool,
+     /// Thread-group shared memory, in dwords.
+     pub lds_dwords: u32,
+     lds: Option<V>,
+@@ -283,6 +288,7 @@
+             nonuniform_handles: 0,
+             threads: None,
+             wave_size: None,
++            declare_wave: true,
+             lds_dwords: 0,
+             lds: None,
+             main,
+@@ -844,7 +850,7 @@
+                 }
+             }
+         }
+-        if let Some(n) = self.wave_size {
++        if let Some(n) = self.wave_size.filter(|_| self.declare_wave) {
+             props.push(i32c(&mut self, 11));
+             let n = Some(i32c(&mut self, n));
+             props.push(self.m.md_node(vec![n]));
+@@ -944,7 +950,7 @@
+             geometry: self.geometry.map(|g| g.max_vertices),
+             bindings: &bindings,
+             threads: self.threads.unwrap_or_default(),
+-            wave_size: self.wave_size,
++            wave_size: self.wave_size.filter(|_| self.declare_wave),
+         });
+         let hash = [0u8; 20];
+         let psg1 = container::signature(&self.prims, false);
+--- a/crates/sixm-shader/src/emit/mod.rs
++++ b/crates/sixm-shader/src/emit/mod.rs
+@@ -118,7 +118,7 @@
+ 
+ pub use bitcode::census;
+ pub use sampler::StaticSampler;
+-pub use lower::{host_settings, set_host_max_wave, set_host_rdna};
++pub use lower::{host_settings, set_host_max_wave, set_host_min_wave, set_host_rdna};
+ pub use rect::rect_list_gs;
+ pub use shader::{
+     MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS, SLOT_MEMORY, SLOT_STRIDES,
+--- a/crates/sixm-shader/src/emit/wave64_tests.rs
++++ b/crates/sixm-shader/src/emit/wave64_tests.rs
+@@ -647,6 +647,54 @@
+     eprintln!("ran on the hardware device: the mask's bits, or the number");
+ }
+ 
++/// A console wave32 program whose cross-lane code needs the console's own 32 lanes (a lane
++/// mask read as a number), on a host whose narrowest wave is 64 lanes (the vendor's cards
++/// before RDNA, which have no 32-lane waves and refuse `WaveSize(32)`). Where the group is
++/// one console wave the wave size is not declared: the group runs in the first 32 lanes of a
++/// 64-lane wave, and the lanes that are elsewhere are in none of its ballots, reductions or
++/// lane reads, which is what the console's wave does. A group of two console waves would
++/// share one host wave, where that code would reach the other wave's lanes: it keeps the
++/// declaration, and the host refuses the pipeline instead of running it with both.
++#[test]
++fn a_wave32_group_of_one_wave_drops_its_declaration_on_64_lane_waves() {
++    let words = [
++        0xD765_0001,
++        0x0001_00C1, // v_mbcnt_lo_u32_b32 v1, -1, 0
++        0x38 << 26 | 0x1C << 18,
++        0x80 << 24 | 2 << 16 | 1 << 8, // buffer_store_dword v1, off, s[8:11], 0
++    ];
++    let declared = |threads: u32, host_min: u32| {
++        let native = native_of(&words, false, threads);
++        let p = ir::build(&native.code, native.wave64, native.vgprs).expect("ir::build");
++        let st = structure::structure(&p).expect("structure");
++        let res =
++            resource::track(&p, &native.layout, native.stage, Some(&st)).expect("resource::track");
++        let io = io::raise(&p, &native).expect("io::raise");
++        let was_max = lower::TEST_HOST_WAVE.replace(Some(64));
++        let was_min = lower::TEST_HOST_MIN_WAVE.replace(Some(host_min));
++        let lowered = lower::lower(&lower::Parts {
++            native: &native,
++            p: &p,
++            st: &st,
++            io: &io,
++            res: &res,
++            inputs: Vec::new(),
++            outputs: Vec::new(),
++            prims: Vec::new(),
++            mesh_stride: 0,
++        });
++        lower::TEST_HOST_MIN_WAVE.set(was_min);
++        lower::TEST_HOST_WAVE.set(was_max);
++        lowered.expect("lower").wave_size
++    };
++    // a host with 32-lane waves takes the declaration, as before
++    assert_eq!(declared(32, 32), Some(32));
++    // one console wave: it runs in the first 32 lanes of a 64-lane wave, undeclared
++    assert_eq!(declared(32, 64), None);
++    // two console waves in one host wave: declared, for the host to refuse
++    assert_eq!(declared(64, 64), Some(32));
++}
++
+ /// A 32-lane console wave. `if (t < s0) { ... SCC = (s1 == 7) }` and a branch on SCC after
+ /// the join: the skip brings the SCC of `s_and_saveexec` ("some lane is left") along
+ /// (`rtdirectionalshadows:CS_RTShadowTrace32HQ_TiledFarOnly`, 0x360-0x39c). On the console
+--- a/crates/sixm-gpu/src/host.rs
++++ b/crates/sixm-gpu/src/host.rs
+@@ -936,6 +936,7 @@
+         {
+             tracing::info!(min = o1.WaveLaneCountMin, max = o1.WaveLaneCountMax, "host wave lanes");
+             sixm_shader::emit::set_host_max_wave(o1.WaveLaneCountMax);
++            sixm_shader::emit::set_host_min_wave(o1.WaveLaneCountMin);
+             // (RDNA has waves of 32 and 64, the vendor's older cards of 64 alone.)
+             let amd = crate::indirect::amd(&device);
+             sixm_shader::emit::set_host_rdna(amd && o1.WaveLaneCountMin == 32 && o1.WaveLaneCountMax == 64);

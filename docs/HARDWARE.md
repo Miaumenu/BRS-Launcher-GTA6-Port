@@ -22,7 +22,7 @@ Para somar a sua máquina: preencha o `STATUS.md` na sua pasta e acrescente uma 
 
 | GPU | Arq. | VRAM | Mesh | SM | Onda mín/máx | Até onde chegou | Quem |
 |---|---|---|---|---|---|---|---|
-| Radeon RX 550 | GCN 4 (Polaris) | 2 GB | **NÃO** | 6.5 | 64 / 64 | arte 2D renderiza (2048+ frames); mundo nunca aparece | equipe, 27/11/2026 |
+| Radeon RX 550 | GCN 4 (Polaris) | 2 GB | **NÃO** | 6.5 | 64 / 64 | arte 2D renderiza (2048+ frames); mundo nunca aparece | [miaumenu](../contributors/miaumenu/STATUS.md), 27/11/2026 |
 | WARP (software) | — | — | NÃO | 6.2 | — | não serve nem para teste de shader | equipe, 27/11/2026 |
 | RX 7900 XTX | RDNA 3 | 24 GB | sim | 6.6 | 32 / 64 | relatado pelo upstream, não verificado por nós | upstream |
 

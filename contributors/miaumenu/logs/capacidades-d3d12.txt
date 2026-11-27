@@ -1,0 +1,15 @@
+# Capacidades D3D12 da máquina
+
+Comando: `SixM-diagnostics\d3d12-capabilities.exe`  (26/11/2026)
+
+```
+Adapter 0: Radeon RX550/550 Series | dedicated VRAM: 2027 MiB | software: no
+  MeshShaderTier: NOT_SUPPORTED (0x00000000)
+  HighestShaderModel: 6.5
+Adapter 1: Radeon RX550/550 Series | dedicated VRAM: 2027 MiB | software: no
+  MeshShaderTier: NOT_SUPPORTED (0x00000000)
+  HighestShaderModel: 6.5
+Adapter 2: Microsoft Basic Render Driver | dedicated VRAM: 0 MiB | software: yes
+  MeshShaderTier: NOT_SUPPORTED (0x00000000)
+  HighestShaderModel: 6.2
+```

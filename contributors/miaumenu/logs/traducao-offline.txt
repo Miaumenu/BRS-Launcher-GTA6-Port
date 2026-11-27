@@ -1,0 +1,22 @@
+# Tradução offline do pacote de shaders
+
+Comando: `sixm-multiversion.exe translate --list "<dump>\shaders.rpf"`  (27/11/2026, ~255 s)
+
+```
+containers   26503 (614 duplicates skipped)
+programs     26084 translated of 26084 (40597574 IR instructions)
+structured   26084 of 26084 (32535818 vector instructions, 790411 guarded, 28029 on opaque masks; branches 795619 per lane, 360838 uniform)
+resources    25889 of 26084 tracked (descriptors 2596542 loaded, 126843 built, 174561 constant; 1269812 scalar accesses; 218896 with a computed term)
+  used-resource entries 437642: 187 not traced {"Cbv via Constants": 17, "Cbv via Table": 33, "Sampler via ImmediateSampler": 22, "Srv via Table": 115}; 0 traced parameters not listed
+I/O          14247 of 14247 vertex and pixel programs raised (214834 interpolations, 6888 vertex values; exports {"color": 29217, "depth": 1170, "null": 6476, "param": 9143, "position": 2222, "unread param": 154}, 0 still f16 pairs)
+DXIL         14247 emitted of 14247 vertex and pixel programs; 0 validated, 0 pipelines
+             2677 emitted of 2682 compute programs; 0 validated, 0 pipelines
+             8765 emitted of 8765 mesh programs; 0 validated, 0 pipelines
+```
+
+## Falhas, agrupadas
+
+```
+196  Gs  resources: an address in an SGPR that is no root parameter
+  6  Cs  emit: a descriptor read only as data
+```
