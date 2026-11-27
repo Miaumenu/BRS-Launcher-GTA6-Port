@@ -1,4 +1,4 @@
-# BRS-Launcher-GTA6-Port
+# GambiarraLauncher
 
 Projeto de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável do título nem um launcher visual completo.
 
@@ -50,7 +50,7 @@ Depois, um pull request com dois arquivos: o seu preset em `configs/presets/` e 
 - A matriz distingue resultados medidos localmente, resultados externos e hardware ainda não testado.
 - Os presets por classe de capacidade estão implementados (`configs/presets/`, comando `preset`). O launcher visual e o benchmark automático ainda não.
 
-O nome do projeto, da pasta local e do repositório principal é **BRS-Launcher-GTA6-Port**. Os nomes `gambiarra-*` ainda usados nos pacotes Rust são identificadores internos do código. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
+O nome do projeto e do repositório no GitHub é **GambiarraLauncher**. A pasta local ainda se chama `BRS-Launcher-GTA6-Port`; os nomes `gambiarra-*` também são usados nos pacotes Rust. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
 
 ## Comece aqui
 

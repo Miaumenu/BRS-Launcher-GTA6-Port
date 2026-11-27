@@ -7,7 +7,7 @@
 
 ## 0. Estado do Git
 
-O repositório público e a pasta local usam o nome **`BRS-Launcher-GTA6-Port`**. O PR #1 já foi mesclado em `main`. O branch `codex/brs-project-update` contém as alterações técnicas posteriores ao merge e será publicado como um PR de acompanhamento; não faça push direto em `main`.
+O repositório público no GitHub foi renomeado para **`Miaumenu/GambiarraLauncher`**. A pasta local ainda se chama `BRS-Launcher-GTA6-Port`. O PR #1 já foi mesclado em `main`. O branch `codex/brs-project-update` contém as alterações técnicas posteriores ao merge e deve ser publicado como um PR de acompanhamento; não faça push direto em `main`.
 
 ```powershell
 cd "C:\Users\X\Desktop\MEU PROPIO LAUNCHER\BRS-Launcher-GTA6-Port"; git status --short
@@ -25,7 +25,7 @@ O repositório principal é público (owner `Miaumenu`):
 
 | repositório | o que é |
 |---|---|
-| `Miaumenu/BRS-Launcher-GTA6-Port` | repositório principal; nome confirmado no GitHub e no disco. |
+| `Miaumenu/GambiarraLauncher` | repositório principal; nome atual informado pelo dono. |
 
 Os executáveis e arquivos de jogo permanecem fora do repositório. O link local `game-dump` aponta para a pasta configurada na máquina; caminhos pessoais e cópias do jogo não devem ser registrados no Git.
 
@@ -104,7 +104,7 @@ Corrigidos em 5 arquivos. Também: removido do `CHANGES.md` um item "em aberto" 
 
 `cargo fmt --all -- --check` — que é o passo do CI — **passa agora**. Reprovava em 25 arquivos de 4 crates, todos anteriores a esta sessão.
 
-O branch de acompanhamento é `codex/brs-project-update`. A pasta e o repositório permanecem `BRS-Launcher-GTA6-Port`; os nomes `gambiarra-*` são identificadores internos herdados dos pacotes e do CLI.
+O branch de acompanhamento é `codex/brs-project-update`. O repositório no GitHub usa `GambiarraLauncher`; a pasta local permanece `BRS-Launcher-GTA6-Port`. Os nomes `gambiarra-*` são usados nos pacotes e no CLI.
 
 ### 3.6 Disco
 
@@ -224,7 +224,7 @@ Variáveis úteis: `GAMBIARRA_KEYS=40:Enter` (aperta teclas sem precisar de foco
 
 | decisão | situação |
 |---|---|
-| **Nome do projeto** | decidido: `GambiarraLauncher`. Pasta local, crates e **todos os textos** já usam. Falta só o GitHub (seção 5, itens 2 e 3). |
+| **Nome do projeto** | decidido: `GambiarraLauncher`; o dono já renomeou o repositório no GitHub. A pasta local ainda tem o nome antigo `BRS-Launcher-GTA6-Port`. |
 | **Ignorar tudo menos esta pasta** | resolvido de fato: a pasta-mãe (`MEU PROPIO LAUNCHER`) **não é um repositório git**, então o `.gitignore` dela não tem efeito. O que vale é o deste repositório, que já ignora `/inspiration/` (linha 96). |
 | **Trazer do `_SX-Local` o que ajuda** | pedido. Candidatos reais: o laudo de shaders, os logs preservados, a sonda `d3d12-capabilities.exe`, o loop instrumentado. O resto (Ghidra, assinaturas, análise do REA, `Private/`) é análise do binário e **não ajuda o launcher**. |
 | **Separar o launcher do Gambiarra** | pedido, para depois. |
