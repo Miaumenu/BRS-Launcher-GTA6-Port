@@ -691,14 +691,6 @@ fn programs(fssm: &[u8]) -> Result<Vec<NativeProgram>, ShaderError> {
                 slot: e[17],
             })
             .collect();
-        // `SIXM_WHY_LAYOUT=1`: the user-data dwords each stage of a container declares,
-        // to see how a merged ES-GS pair splits them (temporary diagnostic).
-        if std::env::var_os("SIXM_WHY_LAYOUT").is_some() {
-            let mut dwords: Vec<u8> = (&layout as &Vec<RootParam>).iter().map(|p| p.user_data).collect();
-            dwords.sort_unstable();
-            dwords.dedup();
-            eprintln!("WHY-LAYOUT stage={stage:?} user_data={dwords:?}");
-        }
         let used = table(RECORD_USED, RECORD_COUNTS + 4)?
             .as_chunks::<{ ENTRY_SIZE as usize }>()
             .0

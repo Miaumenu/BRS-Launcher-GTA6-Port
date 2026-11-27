@@ -1,0 +1,21 @@
+--- a/crates/sixm-shader/src/resource.rs
++++ b/crates/sixm-shader/src/resource.rs
+@@ -879,10 +879,15 @@
+     }
+ 
+     /// The address of an access that traces to no root parameter (`why`
+-    /// says how it failed): title memory at the address as it stands, in a
+-    /// compute program.
++    /// says how it failed): title memory at the address as it stands.
++    ///
++    /// Compute: the ray-tracing structure builder and the programs that walk
++    /// its structures. Geometry: the console's voxelize programs build a
++    /// 40-bit pointer out of two user SGPRs the root signature gives no width
++    /// (`s_mov_b32 s0, s8` / `s_and_b32 s1, s9, 0xff`, then
++    /// `s_load_dword s0, s[0:1], 0xb8`), which is title memory all the same.
+     fn by_address(&self, why: &'static str) -> Result<Address, &'static str> {
+-        if self.stage == HwStage::Cs && RAW.contains(&why) {
++        if matches!(self.stage, HwStage::Cs | HwStage::Gs) && RAW.contains(&why) {
+             Ok(Address {
+                 param: MEMORY,
+                 offset: 0,

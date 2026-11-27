@@ -207,36 +207,6 @@ pub fn track(
     stage: HwStage,
     lanes: Option<&Structured>,
 ) -> Result<Resources, ShaderError> {
-    // `SIXM_DUMP_CODE=Gs`: the first decoded program of that stage, with each
-    // instruction's byte offset, name and words, and the registers it reads and writes.
-    // The tool has no disassembler otherwise (temporary diagnostic).
-    static DUMP: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    if let Some(want) = DUMP.get_or_init(|| std::env::var("SIXM_DUMP_CODE").ok()).as_deref()
-        && want == format!("{stage:?}")
-    {
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            eprintln!("DUMP stage={stage:?} blocks={} layout_entries={}", p.blocks.len(), layout.len());
-            for (reg, value) in &p.inputs {
-                eprintln!("DUMP input {reg:?} = {value:?}");
-            }
-            for (b, block) in p.blocks.iter().enumerate() {
-                eprintln!("DUMP block {b}");
-                for inst in &block.insts {
-                    eprintln!(
-                        "DUMP   {:#06x}  {:<26} words={:08x?}
-            reads={:?}
-            writes={:?}",
-                        inst.machine.offset,
-                        inst.name(),
-                        inst.machine.words,
-                        inst.reads,
-                        inst.writes
-                    );
-                }
-            }
-        });
-    }
     let t = Tracer::new(p, layout, stage, lanes)?;
     let mut out = Resources {
         params: p
@@ -909,10 +879,15 @@ impl<'a> Tracer<'a> {
     }
 
     /// The address of an access that traces to no root parameter (`why`
-    /// says how it failed): title memory at the address as it stands, in a
-    /// compute program.
+    /// says how it failed): title memory at the address as it stands.
+    ///
+    /// Compute: the ray-tracing structure builder and the programs that walk
+    /// its structures. Geometry: the console's voxelize programs build a
+    /// 40-bit pointer out of two user SGPRs the root signature gives no width
+    /// (`s_mov_b32 s0, s8` / `s_and_b32 s1, s9, 0xff`, then
+    /// `s_load_dword s0, s[0:1], 0xb8`), which is title memory all the same.
     fn by_address(&self, why: &'static str) -> Result<Address, &'static str> {
-        if self.stage == HwStage::Cs && RAW.contains(&why) {
+        if matches!(self.stage, HwStage::Cs | HwStage::Gs) && RAW.contains(&why) {
             Ok(Address {
                 param: MEMORY,
                 offset: 0,
@@ -1005,14 +980,6 @@ impl<'a> Tracer<'a> {
         let (param, _) = self
             .param_of(reg)
             .ok_or("an address not from a root parameter")?;
-        // `SIXM_WHY_BASE=1`: which entry register each resolved address base came from,
-        // per stage, to compare the stages' user-SGPR mapping (temporary diagnostic).
-        if std::env::var_os("SIXM_WHY_BASE").is_some() {
-            eprintln!(
-                "WHY-BASE stage={:?} reg={:?} root={:?} user_data={}",
-                self.stage, reg, self.layout[param].root, self.layout[param].user_data
-            );
-        }
         let high = match self.layout[param].root {
             RootType::Table | RootType::ResourceHeap | RootType::SamplerHeap => None,
             RootType::Descriptor => {
@@ -1028,23 +995,6 @@ impl<'a> Tracer<'a> {
         if !self.high_half(hi, high)
             && !(dynamic.is_some() && high.is_some_and(|h| self.carried(hi, h)))
         {
-            // `SIXM_WHY_HIGH=1`: what the high half holds when it is not the zero a
-            // table's pointer is assumed to have (temporary diagnostic).
-            if std::env::var_os("SIXM_WHY_HIGH").is_some() {
-                let hi_reg = match hi {
-                    Term::Value(v) => self.inputs[v.0 as usize].map(|r| format!("{r:?}")),
-                    _ => None,
-                };
-                eprintln!(
-                    "WHY-HIGH stage={:?} base_reg={:?} root={:?} user_data={} hi={:?} hi_input={:?}",
-                    self.stage,
-                    reg,
-                    self.layout[param].root,
-                    self.layout[param].user_data,
-                    hi,
-                    hi_reg
-                );
-            }
             return Err("an address with an untracked high half");
         }
         Ok(Address {
@@ -1122,16 +1072,7 @@ impl<'a> Tracer<'a> {
         let Some(v) = dynamic else {
             return "a constant address";
         };
-        if let Some(reg) = self.inputs[v.0 as usize] {
-            // `SIXM_WHY_SGPR=1`: which entry register the address came from, and what the
-            // title's layout declares, to tell a user SGPR the layout misses from one the
-            // hardware sets up (temporary diagnostic).
-            if std::env::var_os("SIXM_WHY_SGPR").is_some() {
-                eprintln!(
-                    "WHY-SGPR stage={:?} reg={:?} layout={:?}",
-                    self.stage, reg, self.layout
-                );
-            }
+        if self.inputs[v.0 as usize].is_some() {
             return "an address in an SGPR that is no root parameter";
         }
         if self

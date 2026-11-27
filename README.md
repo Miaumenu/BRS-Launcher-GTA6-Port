@@ -49,9 +49,10 @@ Medido sobre o pacote de shaders completo do título, offline:
 | DXIL emitido — vertex e pixel | 14.247 de 14.247 |
 | DXIL emitido — **mesh** | **8.765 de 8.765** |
 | DXIL emitido — compute | 2.677 de 2.682 |
-| **total que falha** | **202 (0,8%)** |
+| recursos rastreados | **26.084 de 26.084** |
+| **total que falha** | **6 (0,02%)** |
 
-O tradutor não é o gargalo. Das 202 falhas, 196 são o mesmo shader de geometria (`GS_VoxelizeGeneric`) e estão descritas em `docs/` com a investigação completa, inclusive as hipóteses já derrubadas.
+O tradutor não é o gargalo. As 196 falhas dos geometry shaders foram corrigidas (`contributors/amd/miaumenu/patches/0003`); as 6 que sobram são todas a mesma causa (`Cs: a descriptor read only as data`). A investigação completa, com as hipóteses derrubadas pelo caminho, está em `docs/INVESTIGACAO-SHADERS.md`.
 
 Reproduza na sua máquina:
 

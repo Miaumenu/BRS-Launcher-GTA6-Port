@@ -65,13 +65,76 @@ Ou seja: tirar o `+8` fazia `ud8` casar com s8 **por coincidência**, ligando o 
 
 ---
 
+## 0003-caminho-MEMORY-para-geometry-shaders
+
+- **Data:** 27/11/2026
+- **Status:** **funcionou** — 196 falhas a menos
+- **Confirmação em segunda máquina:** ❌ pendente (mas é mudança de tradutor, reproduzível offline em qualquer GPU)
+- **Patch:** `patches/0003-caminho-MEMORY-para-geometry-shaders.patch` (uma condição + comentário)
+
+### Como cheguei nela
+
+Depois de o 0002 falhar, parei de inferir pelo comportamento do rastreador e fui **ler as
+instruções**. O tradutor já decodifica GFX10 para montar o IR, então bastava expor o que ele
+já sabia: um dump com o offset, o nome, as palavras e os registradores de cada instrução.
+
+O `GS_VoxelizeGeneric` no offset 0x44:
+
+```
+0x0030  s_and_b32    s1, s9, 0xff      ; metade alta = s9 & 0xFF
+0x0038  s_mov_b32    s0, s8            ; metade baixa = s8
+0x0044  s_load_dword s0, s[0:1], 0xb8  ; lê de um ponteiro de 40 bits
+```
+
+O endereço é `s8 | ((s9 & 0xFF) << 32)` — **memória do título**, montada de dois user SGPRs
+que a root signature declara com largura zero. Por isso a metade alta aparecia como "valor
+calculado": é o `s_and`. E os inputs do programa (`S(8)`, `S(9)`, `S(16)`, `S(19)`) confirmam
+que o `+8` do `user_sgpr` estava certo o tempo todo: s8=ud0, s9=ud1, s16=ud8, s19=ud11.
+
+### A mudança
+
+```diff
+-        if self.stage == HwStage::Cs && RAW.contains(&why) {
++        if matches!(self.stage, HwStage::Cs | HwStage::Gs) && RAW.contains(&why) {
+```
+
+O caminho `MEMORY` já existia para "endereço que não rastreia até um root parameter — memória
+do título como está", e `"an address in an SGPR that is no root parameter"` já estava na lista
+de motivos aceitos. Estava travado em compute por falta de um caso conhecido em outro estágio.
+
+### Medição
+
+| | ANTES (upstream) | DEPOIS |
+|---|---|---|
+| `resources ... tracked` | 25.889 de 26.084 | **26.084 de 26.084** |
+| geometry shaders falhando | **196** | **0** |
+| **total de falhas** | **202** | **6** |
+
+De 26.084 programas, falham 6 — todos o mesmo motivo (`Cs: a descriptor read only as data`).
+
+### Teste de regressão
+
+`cargo test -p sixm-shader`: **246 passaram, 36 falharam** — a mesma contagem de antes da
+mudança. As 36 são `no SM 6.6 device available`, ambientais.
+
+Medido duas vezes: uma com os diagnósticos temporários no código e outra com a árvore já
+limpa, para garantir que o número é da correção e não do instrumental.
+
+### Nota
+
+Os diagnósticos temporários (`SIXM_WHY_SGPR`, `SIXM_WHY_LAYOUT`, `SIXM_WHY_BASE`,
+`SIXM_WHY_HIGH`, `SIXM_DUMP_CODE`) foram **removidos** depois que a investigação terminou.
+`native.rs` voltou a ser idêntico ao upstream. O patch contém só a correção.
+
+---
+
 ## Hipóteses derrubadas
 
 | hipótese | como foi derrubada |
 |---|---|
 | Os 196 `Gs` são um par ES-GS fundido com os user SGPRs divididos (ES com dwords 0..7, GS com 8..14) | `SIXM_WHY_LAYOUT=1` mostrou que **Es e Gs declaram layouts idênticos**, par a par. Não há divisão. |
 | O `+8` do `Gs` está errado | `Ms` e `Es` resolvem centenas de milhares de endereços **com** o `+8`. A anomalia é só do `Gs`. |
-| A metade alta do endereço vem de s9 (a outra tabela declarada) | `hi_input=None`: é valor calculado, não registrador. |
+| A metade alta do endereço vem de s9 (a outra tabela declarada) | `hi_input=None`: é valor calculado. O disassembly mostrou que é `s_and_b32 s1, s9, 0xff` — vem de s9 **mascarado**, não de s9 direto. |
 | A remoção do device aos 55 s era causada pela correção wave32 | Com DRED e GPU timing ligados a corrida foi aos 250 s **sem** remoção. Não reproduziu. Continua sem investigação a fundo. |
 | Havia 12 remoções de device numa corrida | Falso positivo do meu próprio filtro: o padrão `DRED` casava com o nome da pasta `...-i1-dred/frames/`. |
 
