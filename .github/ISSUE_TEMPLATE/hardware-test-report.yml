@@ -1,0 +1,44 @@
+name: Resultado de teste de hardware
+description: Envie dados para a matriz de compatibilidade
+title: "[Hardware] "
+labels:
+  - hardware-report
+body:
+  - type: input
+    id: adapter
+    attributes:
+      label: GPU, VRAM e ID do adaptador
+    validations:
+      required: true
+  - type: input
+    id: driver-os
+    attributes:
+      label: Driver e Windows
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit ou versão testada
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capacidades D3D12 consultadas
+      description: Shader Model, MeshShaderTier, wave lanes e recursos usados.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Etapa, duração e resultado
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidência sanitizada
+      description: Use apenas trechos de logs. Não anexe arquivos do jogo, dumps ou dados pessoais.
+    validations:
+      required: true

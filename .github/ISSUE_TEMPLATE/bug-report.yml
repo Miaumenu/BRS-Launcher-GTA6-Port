@@ -1,0 +1,33 @@
+name: Relato de falha
+description: Falha reproduzível no código ou nas ferramentas do projeto
+title: "[Falha] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o resultado observado e o esperado.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Como reproduzir
+      description: Inclua comandos sem caminhos pessoais nem dados do jogo.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit ou versão
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Trecho de log sanitizado
+      description: Remova tokens, nomes de usuário, caminhos privados e conteúdo proprietário.
+    validations:
+      required: false

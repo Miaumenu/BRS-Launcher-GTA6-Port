@@ -1,0 +1,27 @@
+name: GPU validation (maintainer dispatch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Confirm that this run uses a trusted, isolated GPU runner
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-validation:
+    if: github.ref == 'refs/heads/main' && inputs.confirm
+    runs-on: [self-hosted, windows, gpu-validation]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: Record adapter and driver
+        shell: pwsh
+        run: Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion | Format-List
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - name: Run workspace validation on the selected GPU host
+        run: cargo test --workspace --locked

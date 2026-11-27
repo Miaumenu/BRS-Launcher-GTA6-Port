@@ -1,32 +1,95 @@
-# build
-target/
-**/target/
-*.pdb
+# ---------------------------------------------------------------------------
+# RULE #1: nothing from the game (or any other proprietary source) is ever
+# committed.
+# Everything is built from files the user supplies at runtime.
+# This file is the first line of defence; `cargo xtask policy` (also run by
+# the pre-commit hook in .githooks/) is the second and is authoritative.
+# See docs/asset-policy.md.
+# ---------------------------------------------------------------------------
+
+# Build output
+/target/
+/tests/fixtures/*/target/
+
+# Local configuration (contains paths to YOUR files)
+/sixm-multiversion.toml
+# Legacy config filename remains supported.
+/victory.toml
+
+# Places people tend to drop data into. Keep data outside the repo instead.
+/game/
+/games/
+/assets/
+/data/
+/dump/
+/dumps/
+/extracted/
+/cache/
+/out/
+
+# Executables, libraries, symbols
 *.exe
 *.dll
-*.rlib
-*.rmeta
+*.pdb
+*.lib
+*.sys
+*.obj
+*.exp
+*.ilk
 
-# dados do jogo: nada disso entra aqui
-*.rpf
+# Console packages and containers
 *.xvd
-game_scarlett_master*
-*.opdownload
-appdata*.rpf
+*.xvc
+*.msixvc
+*.xsp
+*.cab
+*.msi
 
-# caches e saida de corrida
-runs/
-frames/
+# Typical game data (non-exhaustive on purpose; the policy check is an allowlist)
+*.bin
+# The one exception (docs/asset-policy.md): the BCPack format's constant tables.
+!/crates/sixm-formats/src/bcpack-tables.bin
+*.dat
+*.pak
+*.rpf
+*.dds
+*.ktx
+*.ktx2
+*.dxbc
+*.dxil
+*.cso
+*.spv
+*.wav
+*.xma
+*.ogg
+*.opus
+*.mp3
+
+# Local run evidence and generated diagnostics
+/runs/
+/frames/
 *.stderr.log
 *.stdout.log
 *.analysis.json
 *.events.jsonl
-cache*/
+/cache*/
 VIctoryCache*/
 SixMCache*/
 
-# ambiente
-.vscode/
+# Local user configuration
+/sixm-multiversion.toml
+/sixm.toml
+*.mp4
+*.bik
+*.bk2
+*.awc
+*.zip
+*.7z
+*.rar
+
+# Editor / OS noise
+.vs/
 .idea/
-__pycache__/
-*.pyc
+*.swp
+Thumbs.db
+.DS_Store

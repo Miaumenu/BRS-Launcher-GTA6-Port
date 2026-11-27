@@ -1,71 +1,46 @@
-# SixMultiVersion
+# GTA 6 PC Port
 
-Camada de compatibilidade para rodar um título Xbox Series nativamente no Windows, e o esforço coletivo para descobrir **em quais máquinas ela realmente funciona**.
+Projeto público de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável de GTA 6 nem um launcher visual completo.
 
-Este repositório é compartilhado: várias pessoas testam em hardwares diferentes ao mesmo tempo, cada uma na sua pasta, e o que funciona sobe para `main/`.
+## Estado atual
 
----
+- O workspace Rust contém o CLI sixm-multiversion e os crates sixm-*.
+- O relatório local da RX 550 alcança a arte de carregamento, mas não renderiza o mundo: a placa reporta Shader Model 6.5 e ausência de mesh shaders.
+- A matriz distingue resultados medidos localmente, resultados externos e hardware ainda não testado.
+- O launcher visual, perfis de GPU por fabricante e benchmark automático ainda não estão implementados.
 
-## Comece por aqui
+O nome do repositório é GTA 6 PC Port; o estado acima descreve o código que existe hoje. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
 
-1. **[CONTRIBUTING.md](CONTRIBUTING.md)** — as regras. Leia inteiro antes do primeiro commit; existem por um motivo concreto.
-2. **[docs/HARDWARE.md](docs/HARDWARE.md)** — o que já foi testado, em que placa, e até onde chegou. Veja se a sua máquina já tem resultado antes de repetir o trabalho.
-3. `contributors/_TEMPLATE/` — copie para `contributors/amd/<seu-nome>/` ou `contributors/nvidia/<seu-nome>/` e preencha o `STATUS.md`. As pastas são por fabricante porque é a GPU que decide o resultado; cada uma tem o seu `README.md` com o que esperar por geração.
+## Comece aqui
 
-> **A regra de ouro:** ninguém edita `main/` direto. Você trabalha só dentro da sua pasta em `contributors/`.
+- CONTRIBUTING.md explica o fluxo de branches e pull requests para a equipe e para contribuições externas.
+- docs/architecture.md descreve os crates atuais.
+- docs/hardware-compatibility.md registra capacidades e resultados de teste.
+- docs/gpu-portability.md explica a detecção por recursos e os perfis de ajuste.
+- docs/debugging-gpu-hangs.md orienta a coleta de diagnóstico sem anexar arquivos do jogo.
+- reports/hardware/_TEMPLATE.md é o formato para enviar um resultado de hardware.
 
----
+## Compilar e verificar
 
-## O que é, tecnicamente
+Requisitos: Windows x64, Rust da versão fixada em rust-toolchain.toml e ferramentas de compilação MSVC/Windows SDK. A GPU precisa ser avaliada pelo relatório de capacidades; Direct3D 12 por si só não garante os recursos usados pelo protótipo.
 
-Não é um emulador. O Xbox Series X é x86-64 AMD, a mesma arquitetura de um PC: o executável do título roda **nativo**, sem emulação de CPU. O que esta camada fornece é o que falta — a API do GDK do Xbox, o D3D12-on-Xbox, e um **tradutor de shaders** que converte o código de máquina GFX10 do console em DXIL que uma GPU de PC entende.
+Na raiz do repositório:
 
-É da mesma família do Wine/Proton, não do Xenia.
+    cargo fmt --all -- --check
+    cargo clippy --workspace --all-targets --locked -- -D warnings
+    cargo test --workspace --locked
+    cargo build --release -p sixm-multiversion
 
-```
-cargo build --profile diag -p sixm-multiversion --features diagnostics
-.\SixM-MultiVersion.cmd pareto-residency
-```
+Para configurar caminhos locais, copie configs/gta6-pc-port.example.toml para sixm-multiversion.toml e preencha apenas caminhos para arquivos que você possui. O arquivo local é ignorado pelo Git.
 
-O jogo não vem no repositório, não vai vir, e nenhum arquivo dele pode ser commitado aqui. Você usa o seu próprio dump, apontado por `SIXM_GAME_DIR`.
+## Portabilidade de GPU
 
----
+AMD, NVIDIA e Intel usam o mesmo caminho D3D12 no host. O runtime consulta recursos reais do adaptador e do driver. Perfis por fabricante só podem ajustar parâmetros medidos; não podem habilitar um recurso que a consulta informou como ausente. Consulte docs/gpu-portability.md.
 
-## Requisitos declarados
+## Contribuições
 
-Windows x64, CPU com AVX2, e GPU Direct3D 12 com **Shader Model 6.6 e mesh shaders**.
+Mudanças de código entram por pull request. A equipe trabalha em branches; contribuidores externos usam forks. Relatórios de hardware podem ser submetidos por formulário ou PR usando o modelo comum; não há uma pasta ativa por pessoa. Veja CONTRIBUTING.md.
 
-Esse último item é o que mais barra gente: **35% dos shaders do título são mesh shaders** (9.282 de 26.503). Uma GPU sem mesh shader renderiza a interface e a arte 2D normalmente e **nunca mostra o mundo** — o que é fácil de confundir com bug de software. Confira a sua placa em [docs/HARDWARE.md](docs/HARDWARE.md) antes de abrir uma investigação.
+## Código aberto e origem
 
----
-
-## Estado do tradutor
-
-Medido sobre o pacote de shaders completo do título, offline:
-
-| | |
-|---|---|
-| programas traduzidos | **26.084 de 26.084** |
-| DXIL emitido — vertex e pixel | 14.247 de 14.247 |
-| DXIL emitido — **mesh** | **8.765 de 8.765** |
-| DXIL emitido — compute | 2.677 de 2.682 |
-| recursos rastreados | **26.084 de 26.084** |
-| **total que falha** | **6 (0,02%)** |
-
-O tradutor não é o gargalo. As 196 falhas dos geometry shaders foram corrigidas (`contributors/amd/miaumenu/patches/0003`); as 6 que sobram são todas a mesma causa (`Cs: a descriptor read only as data`). A investigação completa, com as hipóteses derrubadas pelo caminho, está em `docs/INVESTIGACAO-SHADERS.md`.
-
-Reproduza na sua máquina:
-
-```powershell
-.\main\target\diag\sixm-multiversion.exe translate --list "<seu dump>\shaders.rpf"
-```
-
-Leva uns 4 minutos, não abre o jogo e não depende de GPU — é o jeito rápido de medir.
-
----
-
-## Origem e licença
-
-Deriva do projeto **VIctory**, de [codec-d/cool_fox](https://github.com/codec-d/cool_fox), sob **GPL-3.0-or-later**. Os nomes `victory*` / `VICTORY_*` foram trocados por `sixm*` / `SIXM_*` neste fork; o código, a licença e a autoria originais continuam sendo de lá.
-
-Tudo que você contribuir aqui entra sob a mesma licença.
+O código mantém a licença e os avisos de origem presentes em LICENSE. Consulte também docs/architecture.md para a proveniência técnica do runtime.

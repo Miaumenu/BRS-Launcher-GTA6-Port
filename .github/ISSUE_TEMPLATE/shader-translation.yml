@@ -1,0 +1,31 @@
+name: Falha de tradução de shader
+description: Caso reproduzível no tradutor de shaders
+title: "[Shader] "
+labels:
+  - shader
+body:
+  - type: input
+    id: commit
+    attributes:
+      label: Commit do projeto
+    validations:
+      required: true
+  - type: input
+    id: stage
+    attributes:
+      label: Estágio e identificador/hash do programa
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Mensagem de falha e comportamento
+    validations:
+      required: true
+  - type: textarea
+    id: synthetic-case
+    attributes:
+      label: Caso sintético reproduzível
+      description: Não anexe shaders ou arquivos extraídos do jogo.
+    validations:
+      required: false

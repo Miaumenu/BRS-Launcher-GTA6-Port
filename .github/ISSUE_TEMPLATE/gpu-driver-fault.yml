@@ -1,0 +1,38 @@
+name: Falha de GPU ou driver
+description: Device removal, TDR, DRED ou falha ao criar pipeline
+title: "[GPU] "
+labels:
+  - gpu
+body:
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU e VRAM
+    validations:
+      required: true
+  - type: input
+    id: driver
+    attributes:
+      label: Versão do driver e Windows
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capacidades consultadas
+      description: Shader Model, MeshShaderTier, wave lanes e RaytracingTier quando relevante.
+    validations:
+      required: true
+  - type: input
+    id: error
+    attributes:
+      label: Código de erro ou mensagem exata
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized-log
+    attributes:
+      label: Trecho sanitizado do log
+      description: Não anexe dumps, arquivos do jogo, tokens ou caminhos pessoais.
+    validations:
+      required: true
