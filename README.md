@@ -1,4 +1,4 @@
-# GTA 6 PC Port
+# BRS-Launcher-GTA6-Port
 
 Projeto público de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável de GTA 6 nem um launcher visual completo.
 
@@ -9,7 +9,7 @@ Projeto público de pesquisa sobre compatibilidade do runtime e suporte gráfico
 - A matriz distingue resultados medidos localmente, resultados externos e hardware ainda não testado.
 - O launcher visual, perfis de GPU por fabricante e benchmark automático ainda não estão implementados.
 
-O nome do repositório é GTA 6 PC Port; o estado acima descreve o código que existe hoje. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
+O nome do projeto é **BRS-Launcher-GTA6-Port**; o estado acima descreve o código que existe hoje. Não há arquivos do jogo neste repositório. Não adicione executáveis, pacotes, dumps, texturas, áudio, shaders extraídos, chaves ou dados pessoais.
 
 ## Comece aqui
 
@@ -31,7 +31,7 @@ Na raiz do repositório:
     cargo test --workspace --locked
     cargo build --release -p sixm-multiversion
 
-Para configurar caminhos locais, copie configs/gta6-pc-port.example.toml para sixm-multiversion.toml e preencha apenas caminhos para arquivos que você possui. O arquivo local é ignorado pelo Git.
+Para configurar caminhos locais, copie configs/brs-launcher-gta6-port.example.toml para sixm-multiversion.toml e preencha apenas caminhos para arquivos que você possui. O arquivo local é ignorado pelo Git.
 
 ## Portabilidade de GPU
 

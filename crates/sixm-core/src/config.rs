@@ -2,7 +2,7 @@
 //!
 //! Resolution order for each value: environment variable, then the config
 //! file (`SIXM_CONFIG`, else `./sixm-multiversion.toml`), then the default.
-//! See `configs/gta6-pc-port.example.toml` in the repository.
+//! See `configs/brs-launcher-gta6-port.example.toml` in the repository.
 
 use std::path::{Path, PathBuf};
 
@@ -109,7 +109,7 @@ impl Config {
     pub fn require_game_dir(&self) -> Result<&Path> {
         self.game_dir.as_deref().context(
             "no game directory configured: set SIXM_GAME_DIR or [paths].game_dir in \
-             sixm-multiversion.toml (see configs/gta6-pc-port.example.toml)",
+             sixm-multiversion.toml (see configs/brs-launcher-gta6-port.example.toml)",
         )
     }
 
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn example_config_parses() {
-        let text = include_str!("../../../configs/gta6-pc-port.example.toml");
+        let text = include_str!("../../../configs/brs-launcher-gta6-port.example.toml");
         let parsed: FileConfig = toml::from_str(text).unwrap();
         assert!(parsed.paths.game_dir.is_some());
     }

@@ -19,7 +19,7 @@ REQUIRED = (
     "docs/hardware-compatibility.md",
     "docs/gpu-portability.md",
     "reports/hardware/_TEMPLATE.md",
-    "configs/gta6-pc-port.example.toml",
+    "configs/brs-launcher-gta6-port.example.toml",
 )
 ARCHIVE_DIRS = {"docs/history", "reports/archive"}
 

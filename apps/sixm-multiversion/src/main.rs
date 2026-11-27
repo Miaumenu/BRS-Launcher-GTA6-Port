@@ -274,7 +274,7 @@ pub(crate) fn default_paths(paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
     let all: Vec<PathBuf> = cfg.game_dir.into_iter().chain(cfg.test_titles).collect();
     anyhow::ensure!(
         !all.is_empty(),
-        "no paths given and none configured (see configs/gta6-pc-port.example.toml)"
+        "no paths given and none configured (see configs/brs-launcher-gta6-port.example.toml)"
     );
     Ok(all)
 }
