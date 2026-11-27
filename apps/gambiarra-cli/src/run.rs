@@ -110,7 +110,10 @@ pub fn run(
         Console::SeriesX => gambiarra_hle::console::Console::SeriesX,
         Console::SeriesS => gambiarra_hle::console::Console::SeriesS,
     });
-    println!("console        {}", gambiarra_hle::console::current().name());
+    println!(
+        "console        {}",
+        gambiarra_hle::console::current().name()
+    );
     let dlls = gambiarra_loader::load_title_dlls(image.info(), title_dir, &images, &wanted)?;
     for (name, dll) in &dlls {
         println!("title dll      {name} at {:#x}", dll.base());
@@ -134,7 +137,7 @@ pub fn run(
         );
         println!("missing dlls   {message}");
         // None of their imports can be bound, so the title stops at its first
-        // call into one (Grand Theft Auto VI 1.0.2.1 at +0x2237178 during
+        // call into one (build 1.0.2.1 at +0x2237178 during
         // System Init, #930) with nothing saying why. Stubs only if asked for.
         if execute && matches!(unimplemented, Unimplemented::Trap) {
             anyhow::bail!(
@@ -260,7 +263,7 @@ fn watch(base: usize, size: usize) {
 
 /// Debugging aid: `GAMBIARRA_POKE=<rva>:<byte>,...` (hex) writes the byte at
 /// each title+rva twice a second. A title that ends itself when its main
-/// loop has not ticked for a while (Grand Theft Auto VI: 30 s) runs on
+/// loop has not ticked for a while (30 s in the title measured here) runs on
 /// through slower frames with its tick flag poked. The address must be
 /// writable title data.
 #[cfg(all(windows, feature = "diagnostics"))]
@@ -345,8 +348,12 @@ impl LateDlls {
             let new = {
                 let mut mapped = self.mapped.lock().unwrap_or_else(|e| e.into_inner());
                 let wanted = |dll: &str| title_dll(&self.host, dll) && image_named(dll).is_none();
-                let new =
-                    gambiarra_loader::load_title_dll(file, &self.title_dir, &self.cache_dir, &wanted)?;
+                let new = gambiarra_loader::load_title_dll(
+                    file,
+                    &self.title_dir,
+                    &self.cache_dir,
+                    &wanted,
+                )?;
                 let hle = gambiarra_hle::HleResolver::new(self.host.clone());
                 let old = gambiarra_loader::WithTitleDlls {
                     inner: &hle,
