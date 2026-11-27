@@ -113,7 +113,13 @@ impl Pending {
             key.update(s.stage.as_bytes());
             key.update(s.hash.as_bytes());
         }
-        key.update(graphics.as_ref().map(|g| g.describe()).unwrap_or_default().as_bytes());
+        key.update(
+            graphics
+                .as_ref()
+                .map(|g| g.describe())
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         let scene_input = scene_input(&shaders);
         let screen = (graphics.as_ref().is_some_and(|g| g.screen_pass())
             && shaders.iter().all(|s| s.stage != "mesh"))
@@ -200,7 +206,10 @@ fn wait_budget() -> Duration {
 fn screen_budget() -> Duration {
     static BUDGET: OnceLock<Duration> = OnceLock::new();
     *BUDGET.get_or_init(|| {
-        let millis = std::env::var("SIXM_SCREEN_WAIT_MS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(10_000);
+        let millis = std::env::var("SIXM_SCREEN_WAIT_MS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(10_000);
         Duration::from_millis(millis)
     })
 }
@@ -275,13 +284,18 @@ fn shared_budget() -> bool {
 /// Waits for `p` while frame `frame` has budget left.
 fn wait(p: &Pending, frame: u64) {
     let screen = p.screen && screens_first();
-    let budget = if screen { screen_budget() } else { wait_budget() };
+    let budget = if screen {
+        screen_budget()
+    } else {
+        wait_budget()
+    };
     if budget.is_zero() {
         return;
     }
     // The frame the budget belongs to, and what was waited of it (or is
     // taken by a thread waiting now); of the passes over the screen too.
-    static SPENT: [Mutex<(u64, Duration)>; 2] = [const { Mutex::new((u64::MAX, Duration::ZERO)) }; 2];
+    static SPENT: [Mutex<(u64, Duration)>; 2] =
+        [const { Mutex::new((u64::MAX, Duration::ZERO)) }; 2];
     let spent_of = &SPENT[usize::from(screen)];
     let shared = shared_budget();
     let left = {
@@ -306,7 +320,10 @@ fn wait(p: &Pending, frame: u64) {
         if rest.is_zero() {
             break;
         }
-        held = done.wait_timeout(held, rest).unwrap_or_else(|e| e.into_inner()).0;
+        held = done
+            .wait_timeout(held, rest)
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
     }
     drop(held);
     let waited = started.elapsed().min(left);
@@ -355,7 +372,11 @@ fn slow_limit() -> usize {
         if std::env::var_os("SIXM_PIPELINE_SLOW").is_some_and(|v| v == "0") {
             usize::MAX
         } else {
-            (worker_count(None, std::thread::available_parallelism().map_or(2, |n| n.get())) / 4).max(1)
+            (worker_count(
+                None,
+                std::thread::available_parallelism().map_or(2, |n| n.get()),
+            ) / 4)
+                .max(1)
         }
     })
 }
@@ -386,7 +407,11 @@ impl Queue {
     /// Queues an unrequested pipeline or promotes one queued at creation.
     /// Returns whether it is new to the queue, or `None` if nothing changed.
     fn push(&mut self, p: &Arc<Pending>, priority: u8) -> Option<bool> {
-        self.push_as(p, priority, slow_limit() != usize::MAX && super::library::slow(&p.key))
+        self.push_as(
+            p,
+            priority,
+            slow_limit() != usize::MAX && super::library::slow(&p.key),
+        )
     }
 
     fn push_as(&mut self, p: &Arc<Pending>, priority: u8, slow: bool) -> Option<bool> {
@@ -410,11 +435,15 @@ impl Queue {
     fn pop(&mut self, screens_only: bool, slow_limit: usize) -> Option<Arc<Pending>> {
         // An early entry can have been promoted and claimed already.
         let unclaimed = |list: &mut VecDeque<Arc<Pending>>| {
-            std::iter::from_fn(|| list.pop_front()).find(|p| p.queue_state.load(Ordering::Relaxed) == EARLY)
+            std::iter::from_fn(|| list.pop_front())
+                .find(|p| p.queue_state.load(Ordering::Relaxed) == EARLY)
         };
         let mut p = self.screen.pop_front();
         if p.is_none() && !screens_only {
-            p = self.requested.pop_front().or_else(|| unclaimed(&mut self.early));
+            p = self
+                .requested
+                .pop_front()
+                .or_else(|| unclaimed(&mut self.early));
             if p.is_none() && self.slow_now < slow_limit {
                 p = unclaimed(&mut self.slow);
                 if let Some(p) = &p {
@@ -447,7 +476,10 @@ fn start(p: &Arc<Pending>, priority: u8) {
     let mut queue = QUEUE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(new) = queue.push(p, priority) {
         if new {
-            PEAK.fetch_max(WAITING.fetch_add(1, Ordering::Relaxed) + 1, Ordering::Relaxed);
+            PEAK.fetch_max(
+                WAITING.fetch_add(1, Ordering::Relaxed) + 1,
+                Ordering::Relaxed,
+            );
         }
         // (One woken could be a worker that takes passes over the screen
         // alone: it would leave the pipeline to nobody.)
@@ -505,11 +537,16 @@ fn workers() -> bool {
                     // Below the title's own threads (loading, recording),
                     // and the streaming one, which is below normal itself
                     // (`SIXM_PIPELINE_LOWEST=0`: level with it, as before).
-                    let lowest = !screens_only && std::env::var_os("SIXM_PIPELINE_LOWEST").is_none_or(|v| v != "0");
+                    let lowest = !screens_only
+                        && std::env::var_os("SIXM_PIPELINE_LOWEST").is_none_or(|v| v != "0");
                     // SAFETY: a plain call on our own thread.
                     unsafe {
                         use windows::Win32::System::Threading::*;
-                        let priority = if lowest { THREAD_PRIORITY_LOWEST } else { THREAD_PRIORITY_BELOW_NORMAL };
+                        let priority = if lowest {
+                            THREAD_PRIORITY_LOWEST
+                        } else {
+                            THREAD_PRIORITY_BELOW_NORMAL
+                        };
                         let _ = SetThreadPriority(GetCurrentThread(), priority);
                     }
                     loop {

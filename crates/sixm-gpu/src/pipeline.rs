@@ -79,7 +79,8 @@ static SHADERS: Mutex<Option<HashMap<[u8; 32], Arc<Shader>>>> = Mutex::new(None)
 
 /// For the memory lines: containers kept and their bytes, translations
 /// kept and the bytes of their host code. None of them is ever let go.
-static KEPT: [std::sync::atomic::AtomicU64; 4] = [const { std::sync::atomic::AtomicU64::new(0) }; 4];
+static KEPT: [std::sync::atomic::AtomicU64; 4] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
 
 /// What the shader table and the pipeline library keep in memory:
 /// containers and their bytes, translations and their bytes, the bytes of
@@ -115,7 +116,9 @@ fn shader(stage: &'static str, bytes: &[u8]) -> Arc<Shader> {
                 hash: full.to_hex()[..16].to_owned(),
                 container: bytes.to_vec(),
                 #[cfg(windows)]
-                ambient: (stage == "compute").then(|| crate::ambient::role(bytes)).flatten(),
+                ambient: (stage == "compute")
+                    .then(|| crate::ambient::role(bytes))
+                    .flatten(),
                 #[cfg(windows)]
                 translated: OnceLock::new(),
             })
@@ -162,7 +165,10 @@ impl Shader {
                 }
                 if let Ok(t) = &done {
                     KEPT[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    KEPT[3].fetch_add(t.host.dxil.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    KEPT[3].fetch_add(
+                        t.host.dxil.len() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                 }
                 match &done {
                     Ok(t) => tracing::info!(
@@ -209,7 +215,9 @@ fn translate(container: &[u8]) -> Result<Translated, String> {
     let host = crate::shader_cache::host_shader(container)?;
     let stores = programs.is_empty() || programs.iter().any(stores);
     let threads = programs.iter().find_map(|p| match &p.io {
-        sixm_shader::native::StageIo::Cs(cs) if cs.threads.iter().all(|&n| n > 0) => Some(cs.threads),
+        sixm_shader::native::StageIo::Cs(cs) if cs.threads.iter().all(|&n| n > 0) => {
+            Some(cs.threads)
+        }
         _ => None,
     });
     let stores_by_address = programs.is_empty() || programs.iter().any(stores_by_address);
@@ -304,7 +312,8 @@ fn of_builder(shaders: &[Arc<Shader>]) -> bool {
 #[cfg(windows)]
 pub(crate) fn builder_quarantined(this: This) -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    is_builder(this) && *ON.get_or_init(|| std::env::var_os("SIXM_BVH_QUARANTINE").is_some_and(|v| v == "1"))
+    is_builder(this)
+        && *ON.get_or_init(|| std::env::var_os("SIXM_BVH_QUARANTINE").is_some_and(|v| v == "1"))
 }
 
 /// Whether the title's pipeline `this` is one of the structure builder's.
@@ -321,7 +330,10 @@ pub(crate) fn builder_rests(why: &'static str) {
     b.rests = crate::frame::current() + 2;
     static SAID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     if SAID.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 20 {
-        tracing::warn!(why, "the ray-tracing structure builder rests for this frame and the next: its stages run all or none");
+        tracing::warn!(
+            why,
+            "the ray-tracing structure builder rests for this frame and the next: its stages run all or none"
+        );
     }
 }
 
@@ -340,7 +352,12 @@ pub(crate) fn builder_runs() -> bool {
     if b.whole {
         return true;
     }
-    let missing: Vec<String> = b.pipelines.iter().filter(|p| !make::now(p)).map(|p| make::hashes(p)).collect();
+    let missing: Vec<String> = b
+        .pipelines
+        .iter()
+        .filter(|p| !make::now(p))
+        .map(|p| make::hashes(p))
+        .collect();
     if !missing.is_empty() {
         b.off = b.pipelines.len();
         tracing::warn!(
@@ -401,8 +418,9 @@ fn stores_by_address(program: &sixm_shader::NativeProgram) -> bool {
     };
     code.iter().any(|i| {
         matches!(i.encoding, Encoding::Flat | Encoding::Global)
-            && i.name()
-                .is_none_or(|n| (n.contains("store") || n.contains("atomic")) && !n.contains("scratch"))
+            && i.name().is_none_or(|n| {
+                (n.contains("store") || n.contains("atomic")) && !n.contains("scratch")
+            })
     })
 }
 
@@ -481,10 +499,7 @@ fn parse_skip_hashes(value: &str) -> Vec<String> {
             if hash.len() == 16 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 Some(hash.to_ascii_lowercase())
             } else {
-                tracing::warn!(
-                    hash,
-                    "SIXM_SKIP_PIPELINES expects 16-digit shader hashes"
-                );
+                tracing::warn!(hash, "SIXM_SKIP_PIPELINES expects 16-digit shader hashes");
                 None
             }
         })
@@ -534,7 +549,10 @@ pub(crate) fn note_drop(this: This) {
 pub(crate) fn note_why(why: String) {
     crate::capture::op(0, || format!("DROPPED {why}"));
     let mut drops = DROPS.lock().unwrap_or_else(|e| e.into_inner());
-    *drops.get_or_insert_with(HashMap::new).entry(why).or_default() += 1;
+    *drops
+        .get_or_insert_with(HashMap::new)
+        .entry(why)
+        .or_default() += 1;
 }
 
 /// The drops counted since the last call, most first (diagnostics).

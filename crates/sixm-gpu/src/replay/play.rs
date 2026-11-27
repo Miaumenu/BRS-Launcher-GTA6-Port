@@ -344,7 +344,11 @@ pub fn title_shaders(folder: &Path) -> Result<std::collections::BTreeSet<(String
                 && let Some(hash) = title_hash(p, *blob)
             {
                 let at = p.name.find(hash).unwrap_or(0);
-                let stage = p.name[..at].trim_end().rsplit(['[', ' ']).next().unwrap_or("");
+                let stage = p.name[..at]
+                    .trim_end()
+                    .rsplit(['[', ' '])
+                    .next()
+                    .unwrap_or("");
                 all.insert((stage.to_owned(), hash.to_owned()));
             }
         }
@@ -411,15 +415,21 @@ pub fn dump(folder: &Path, text: &str) -> Result<Vec<String>> {
 /// frame), and before them the frame's buffers: `--listing`.
 pub fn listing(folder: &Path, lists: (u32, u32), line: &mut dyn FnMut(&str)) -> Result<()> {
     let frame = Frame::read(&find(folder)?.join("frame.bin"))?;
-    let pipelines: HashMap<u32, &str> =
-        frame.pipelines.iter().map(|p| (p.id, p.name.as_str())).collect();
+    let pipelines: HashMap<u32, &str> = frame
+        .pipelines
+        .iter()
+        .map(|p| (p.id, p.name.as_str()))
+        .collect();
     for r in &frame.resources {
         if r.desc.dimension == D3D12_RESOURCE_DIMENSION_BUFFER.0 {
             let place = match &r.place {
                 Place::Committed { props, .. } => format!("{:?}", gpu::seen(props)),
                 other => format!("{other:?}"),
             };
-            line(&format!("buffer {} {} bytes, {place}: {}", r.id, r.desc.width, r.name));
+            line(&format!(
+                "buffer {} {} bytes, {place}: {}",
+                r.id, r.desc.width, r.name
+            ));
         } else {
             let d = &r.desc;
             line(&format!(
@@ -437,10 +447,16 @@ pub fn listing(folder: &Path, lists: (u32, u32), line: &mut dyn FnMut(&str)) -> 
                 continue;
             }
             line(&format!("list {here} of submission {i}"));
-            for (n, c) in Cmd::all(&frame.lists[l as usize].commands.0)?.iter().enumerate() {
+            for (n, c) in Cmd::all(&frame.lists[l as usize].commands.0)?
+                .iter()
+                .enumerate()
+            {
                 match c {
                     Cmd::Pipeline { pso } => {
-                        line(&format!("{n} Pipeline {pso} {}", pipelines.get(pso).copied().unwrap_or_default()));
+                        line(&format!(
+                            "{n} Pipeline {pso} {}",
+                            pipelines.get(pso).copied().unwrap_or_default()
+                        ));
                     }
                     c => line(&format!("{n} {c:?}")),
                 }
@@ -479,7 +495,10 @@ pub fn replay(folder: &Path, options: &Options) -> Result<Vec<(String, Report)>>
             stamps_b.push(player.once(options, &mut b)?);
         }
         out.push(("unchanged".into(), player.finish(&plain, a, &stamps_a)?));
-        out.push(("with the experiments".into(), player.finish(options, b, &stamps_b)?));
+        out.push((
+            "with the experiments".into(),
+            player.finish(options, b, &stamps_b)?,
+        ));
         return Ok(out);
     }
     let what = if options.edited() {
@@ -768,7 +787,10 @@ impl Player {
         for h in &self.frame.heaps {
             let desc = D3D12_HEAP_DESC {
                 SizeInBytes: h.size,
-                Properties: props(&h.props, only.is_empty() && used_by_buffers_only.contains(&h.id)),
+                Properties: props(
+                    &h.props,
+                    only.is_empty() && used_by_buffers_only.contains(&h.id),
+                ),
                 Alignment: h.alignment,
                 Flags: D3D12_HEAP_FLAGS(h.flags & !DROP),
             };
@@ -948,7 +970,11 @@ impl Player {
                         let taken = std::cell::Cell::new(false);
                         let mut m = super::pso::make(&device, &p.parts, root, |i| {
                             let other = shaders.and_then(|dir| {
-                                let own = || frame.codes.get(i as usize).map(|c| c.hash[..8].iter().map(|b| format!("{b:02x}")).collect());
+                                let own = || {
+                                    frame.codes.get(i as usize).map(|c| {
+                                        c.hash[..8].iter().map(|b| format!("{b:02x}")).collect()
+                                    })
+                                };
                                 let hash = title_hash(p, i).map(str::to_owned).or_else(own)?;
                                 std::fs::read(dir.join(format!("{hash}.dxil"))).ok()
                             });
@@ -2046,7 +2072,11 @@ impl Player {
                 if let Some((list, command)) = o.until
                     && here >= list
                 {
-                    let from = if here > list { 0 } else { (command + 1).min(cmds.len()) };
+                    let from = if here > list {
+                        0
+                    } else {
+                        (command + 1).min(cmds.len())
+                    };
                     let rest = cmds.split_off(from);
                     cmds.extend(edit::barriers_only(rest));
                 }
@@ -3034,7 +3064,8 @@ impl Player {
                 if !o.wait_lists {
                     self.worker.queue.ExecuteCommandLists(all);
                     if o.pace > 0.0 {
-                        let until = Instant::now() + std::time::Duration::from_secs_f64(o.pace / 1e3);
+                        let until =
+                            Instant::now() + std::time::Duration::from_secs_f64(o.pace / 1e3);
                         while Instant::now() < until {
                             std::thread::yield_now();
                         }
@@ -3060,7 +3091,11 @@ impl Player {
     /// Runs the frame as the options say.
     pub fn run(&mut self, o: &Options) -> Result<Report> {
         let mut made = self.prepare(o)?;
-        let _awake = if o.awake { crate::host::awake::start(&self.device, || true) } else { None };
+        let _awake = if o.awake {
+            crate::host::awake::start(&self.device, || true)
+        } else {
+            None
+        };
         let mut stamps = Vec::new();
         for _ in 0..o.loops.max(1) {
             stamps.push(self.once(o, &mut made)?);
@@ -3123,7 +3158,12 @@ impl Player {
     }
 
     /// The report after the last run.
-    fn finish(&mut self, o: &Options, (built, mut report): (Sends, Report), stamps: &[Vec<u64>]) -> Result<Report> {
+    fn finish(
+        &mut self,
+        o: &Options,
+        (built, mut report): (Sends, Report),
+        stamps: &[Vec<u64>],
+    ) -> Result<Report> {
         if o.detailed {
             self.detail(&built, stamps, o, &mut report);
         }
@@ -3143,7 +3183,11 @@ impl Player {
     fn detail(&self, built: &Sends, stamps: &[Vec<u64>], o: &Options, report: &mut Report) {
         let mut kinds: BTreeMap<&str, (Vec<f64>, u32)> = BTreeMap::new();
         let mut shaders: HashMap<u32, (Vec<f64>, u32)> = HashMap::new();
-        let loops = if stamps.len() > 2 { &stamps[1..] } else { stamps };
+        let loops = if stamps.len() > 2 {
+            &stamps[1..]
+        } else {
+            stamps
+        };
         for stamps in loops {
             let mut of_kind: BTreeMap<&str, (f64, u32)> = BTreeMap::new();
             let mut of_shader: HashMap<u32, (f64, u32)> = HashMap::new();
@@ -3172,7 +3216,9 @@ impl Player {
             }
         }
         let kinds = kinds.into_iter().map(|(k, (ms, n))| (k, (median(&ms), n)));
-        let shaders = shaders.into_iter().map(|(k, (ms, n))| (k, (median(&ms), n)));
+        let shaders = shaders
+            .into_iter()
+            .map(|(k, (ms, n))| (k, (median(&ms), n)));
         report.categories = kinds
             .into_iter()
             .map(|(k, (ms, n))| (k.to_owned(), ms, n))
@@ -3187,7 +3233,11 @@ impl Player {
         report.shaders = all
             .into_iter()
             .map(|(ms, n, pso)| {
-                let name = match self.objects.get(&(pso & !COPY_TO)).filter(|_| pso & COPY_TO != 0) {
+                let name = match self
+                    .objects
+                    .get(&(pso & !COPY_TO))
+                    .filter(|_| pso & COPY_TO != 0)
+                {
                     Some(o) => {
                         let r = &self.frame.resources[o.index];
                         format!("copies to #{} {}", pso & !COPY_TO, r.name)
@@ -3410,7 +3460,11 @@ fn read_at(file: &File, mut to: &mut [u8], mut at: u64) -> std::io::Result<()> {
     Ok(())
 }
 
-fn make_device(frame: &Frame, debug: bool, breadcrumbs: bool) -> Result<(ID3D12Device, Option<ID3D12InfoQueue>)> {
+fn make_device(
+    frame: &Frame,
+    debug: bool,
+    breadcrumbs: bool,
+) -> Result<(ID3D12Device, Option<ID3D12InfoQueue>)> {
     // SAFETY: plain creation and queries.
     unsafe {
         if debug {

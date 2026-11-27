@@ -85,7 +85,12 @@ enum Set {
 
 fn parse(set: &str) -> Set {
     let set = set.trim();
-    let number = |t: &str| t.trim().parse::<f32>().ok().filter(|v| v.is_finite() && *v > 0.0);
+    let number = |t: &str| {
+        t.trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0)
+    };
     match set.strip_prefix("constant:") {
         Some(level) => number(level).map_or(Set::Off, Set::Constant),
         None => number(set).map_or(Set::Off, Set::Estimate),
@@ -108,7 +113,11 @@ fn air() -> f32 {
     static SET: OnceLock<f32> = OnceLock::new();
     *SET.get_or_init(|| {
         let set = std::env::var("SIXM_AMBIENT_AIR").unwrap_or_default();
-        set.trim().parse().ok().filter(|v: &f32| v.is_finite() && *v > 0.0).unwrap_or(0.0)
+        set.trim()
+            .parse()
+            .ok()
+            .filter(|v: &f32| v.is_finite() && *v > 0.0)
+            .unwrap_or(0.0)
     })
 }
 
@@ -352,7 +361,10 @@ unsafe impl Send for Pass {}
 // SAFETY: as above.
 unsafe impl Sync for Pass {}
 
-fn make(device: &ID3D12Device, buffer: impl Fn(u64) -> Option<ID3D12Resource>) -> windows::core::Result<Pass> {
+fn make(
+    device: &ID3D12Device,
+    buffer: impl Fn(u64) -> Option<ID3D12Resource>,
+) -> windows::core::Result<Pass> {
     let mut root: Option<ID3D12RootSignature> = None;
     let mut pipeline = |part: &str, entry| -> windows::core::Result<ID3D12PipelineState> {
         let code = crate::host::compile(&format!("#define {part}\n{SOURCE}"), entry, s!("cs_5_1"))?;
@@ -363,7 +375,10 @@ fn make(device: &ID3D12Device, buffer: impl Fn(u64) -> Option<ID3D12Resource>) -
             }
             let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
                 pRootSignature: std::mem::transmute_copy(&root),
-                CS: D3D12_SHADER_BYTECODE { pShaderBytecode: code.as_ptr().cast(), BytecodeLength: code.len() },
+                CS: D3D12_SHADER_BYTECODE {
+                    pShaderBytecode: code.as_ptr().cast(),
+                    BytecodeLength: code.len(),
+                },
                 ..Default::default()
             };
             device.CreateComputePipelineState(&desc)
@@ -401,7 +416,10 @@ fn pass() -> Option<&'static Pass> {
 }
 
 fn uav_barrier(list: &ID3D12GraphicsCommandList) {
-    let barrier = D3D12_RESOURCE_BARRIER { Type: D3D12_RESOURCE_BARRIER_TYPE_UAV, ..Default::default() };
+    let barrier = D3D12_RESOURCE_BARRIER {
+        Type: D3D12_RESOURCE_BARRIER_TYPE_UAV,
+        ..Default::default()
+    };
     // SAFETY: an open list; the barrier names no resource.
     unsafe { list.ResourceBarrier(&[barrier]) };
 }
@@ -484,13 +502,23 @@ pub(crate) fn after(list: &HostList, role: Role, views: &Views) -> bool {
                 run(&pass.mean, 1, 1, 1);
                 KEPT.store(true, Ordering::Relaxed);
             }
-            Role::Air => run(&pass.air, views.size[0].div_ceil(8), views.size[1].div_ceil(8), views.slices.div_ceil(2)),
+            Role::Air => run(
+                &pass.air,
+                views.size[0].div_ceil(8),
+                views.size[1].div_ceil(8),
+                views.slices.div_ceil(2),
+            ),
             Role::Resolve => {
                 if constant == 0.0 {
                     run(&pass.place, 8, 9, 1);
                     run(&pass.gather, 20, 45, 1);
                 }
-                run(&pass.raise, views.size[0].div_ceil(8), views.size[1].div_ceil(8), 1);
+                run(
+                    &pass.raise,
+                    views.size[0].div_ceil(8),
+                    views.size[1].div_ceil(8),
+                    1,
+                );
             }
         }
     }
@@ -513,9 +541,18 @@ mod tests {
 
     #[test]
     fn roles_by_name() {
-        assert_eq!(role(b"..CS_ScreenProbes_TemporalResolve_a911b49c_Wrapped.."), Some(Role::Resolve));
-        assert_eq!(role(b"..CS_CacheScreenSpaceRadiance_eed2fc35.."), Some(Role::Radiance));
-        assert_eq!(role(b"CS_AccumulateLocalLightInscatteringVolume_7e2f5eef"), Some(Role::Air));
+        assert_eq!(
+            role(b"..CS_ScreenProbes_TemporalResolve_a911b49c_Wrapped.."),
+            Some(Role::Resolve)
+        );
+        assert_eq!(
+            role(b"..CS_CacheScreenSpaceRadiance_eed2fc35.."),
+            Some(Role::Radiance)
+        );
+        assert_eq!(
+            role(b"CS_AccumulateLocalLightInscatteringVolume_7e2f5eef"),
+            Some(Role::Air)
+        );
         assert_eq!(role(b"CS_TemporalResolve"), None);
     }
 

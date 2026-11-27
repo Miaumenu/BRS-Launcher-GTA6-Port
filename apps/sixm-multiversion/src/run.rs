@@ -43,9 +43,9 @@ pub fn run(
     execute: bool,
     console: Console,
 ) -> Result<()> {
-    use std::sync::Arc;
     use sixm_hle::{HleResolver, HostPolicy};
     use sixm_loader::{BindReport, UnimplementedPolicy, WithTitleDlls};
+    use std::sync::Arc;
 
     if execute {
         check_cpu_features()?;
@@ -345,12 +345,8 @@ impl LateDlls {
             let new = {
                 let mut mapped = self.mapped.lock().unwrap_or_else(|e| e.into_inner());
                 let wanted = |dll: &str| title_dll(&self.host, dll) && image_named(dll).is_none();
-                let new = sixm_loader::load_title_dll(
-                    file,
-                    &self.title_dir,
-                    &self.cache_dir,
-                    &wanted,
-                )?;
+                let new =
+                    sixm_loader::load_title_dll(file, &self.title_dir, &self.cache_dir, &wanted)?;
                 let hle = sixm_hle::HleResolver::new(self.host.clone());
                 let old = sixm_loader::WithTitleDlls {
                     inner: &hle,

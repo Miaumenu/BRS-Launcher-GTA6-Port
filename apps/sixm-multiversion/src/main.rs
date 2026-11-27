@@ -201,11 +201,17 @@ fn main() -> Result<()> {
             warm,
         } => {
             // `SIXM_VIEW_LIMIT=<null slot>`: translate as on a host whose view heap is capped
-            if let Some(n) = std::env::var("SIXM_VIEW_LIMIT").ok().and_then(|v| v.parse().ok()) {
+            if let Some(n) = std::env::var("SIXM_VIEW_LIMIT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+            {
                 sixm_shader::emit::set_view_heap_limit(n);
             }
             // `SIXM_HOST_WAVE=32`: translate as for a GPU whose waves are at most 32 lanes
-            if let Some(n) = std::env::var("SIXM_HOST_WAVE").ok().and_then(|v| v.parse().ok()) {
+            if let Some(n) = std::env::var("SIXM_HOST_WAVE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+            {
                 sixm_shader::emit::set_host_max_wave(n);
             }
             if let Some(file) = warm {
@@ -215,7 +221,13 @@ fn main() -> Result<()> {
         }
         Command::Shaders { paths, jobs } => translate::precompile(paths, jobs),
         #[cfg(windows)]
-        Command::Warm { jobs, limit, again, used, these } => warm::run(jobs, limit, again, used, these),
+        Command::Warm {
+            jobs,
+            limit,
+            again,
+            used,
+            these,
+        } => warm::run(jobs, limit, again, used, these),
         Command::Run {
             exe,
             unimplemented,

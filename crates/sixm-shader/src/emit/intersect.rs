@@ -48,7 +48,13 @@ enum NodeAt {
     /// first 64 bytes and the node's byte in it ([`Lower::bvh_memory`]),
     /// the node's address, for the second half of a 128-byte node, and
     /// whether there is a copy.
-    Memory { handle: V, byte: V, low: V, high: V, mapped: V },
+    Memory {
+        handle: V,
+        byte: V,
+        low: V,
+        high: V,
+        mapped: V,
+    },
 }
 
 /// The ray operands, as floats.

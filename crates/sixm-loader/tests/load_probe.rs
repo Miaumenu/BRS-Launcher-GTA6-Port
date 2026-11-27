@@ -135,9 +135,8 @@ fn loads_binds_and_calls_probe() {
         title_dir.path().join("sixm-probe-title.dll"),
     )
     .unwrap();
-    let dlls =
-        sixm_loader::load_title_dlls(image.info(), title_dir.path(), dir.path(), &|_| true)
-            .unwrap();
+    let dlls = sixm_loader::load_title_dlls(image.info(), title_dir.path(), dir.path(), &|_| true)
+        .unwrap();
     let names: Vec<_> = dlls.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, ["sixm-probe-title.dll"]);
     let resolver = WithTitleDlls {
@@ -158,7 +157,10 @@ fn loads_binds_and_calls_probe() {
     assert_eq!(report.hle, 3);
     assert!(report.host > 0);
     assert_eq!(report.missing.len(), 1);
-    assert_eq!(report.missing[0].symbol, "SixMultiVersionProbeNotImplemented");
+    assert_eq!(
+        report.missing[0].symbol,
+        "SixMultiVersionProbeNotImplemented"
+    );
 
     let call = |name: &str| -> usize { image.export(name).unwrap_or_else(|| panic!("{name}")) };
     // SAFETY: the exports have the signatures declared in the fixture and
@@ -231,10 +233,7 @@ fn loads_binds_and_calls_probe() {
             "DllMain: {before:#x} → {after:#x}"
         );
         // It has static TLS, so Windows would refuse too.
-        assert_eq!(
-            sixm_loader::disable_thread_calls(image.base()),
-            Some(false)
-        );
+        assert_eq!(sixm_loader::disable_thread_calls(image.base()), Some(false));
         assert_eq!(sixm_loader::disable_thread_calls(1), None);
 
         // `FreeLibrary`'s notice, as a failed late load sends it.

@@ -146,7 +146,10 @@ extern "system" fn adapter_description(_: This, out: *mut AdapterDescription) ->
         return E_INVALIDARG;
     }
     let mut name = [0; 128];
-    for (slot, unit) in name.iter_mut().zip("SixMultiVersion console GPU".encode_utf16()) {
+    for (slot, unit) in name
+        .iter_mut()
+        .zip("SixMultiVersion console GPU".encode_utf16())
+    {
         *slot = unit;
     }
     // shortcut: memory sizes are the title's split (GPU-optimal, standard),
@@ -243,7 +246,11 @@ fn display_size() -> (u32, u32) {
             Some((w, h)) if (640..=7680).contains(&w) && (360..=4320).contains(&h) => (w, h),
             _ => (3840, 2160),
         };
-        tracing::info!(width = size.0, height = size.1, "display mode reported to the title");
+        tracing::info!(
+            width = size.0,
+            height = size.1,
+            "display mode reported to the title"
+        );
         size
     })
 }

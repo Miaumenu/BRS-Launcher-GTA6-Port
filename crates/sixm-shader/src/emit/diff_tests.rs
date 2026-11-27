@@ -1254,8 +1254,7 @@ fn translated_compute_matches_pc() {
             })
             .collect();
         for (n, (slot, srv)) in root_views.into_iter().enumerate() {
-            let data = if srv
-                && (slot == super::SLOT_STRIDES || slot == super::SLOT_TABLE_STRIDES)
+            let data = if srv && (slot == super::SLOT_STRIDES || slot == super::SLOT_TABLE_STRIDES)
             {
                 view_strides.clone()
             } else {

@@ -349,12 +349,12 @@ pub fn track(
     for (block, (accesses, mut reads)) in first_lane_at {
         reads.sort_unstable();
         reads.dedup();
-        let proof = t
-            .waterfall(block, &accesses, &reads)
-            .map_err(|what| ShaderError::Unsupported {
-                offset: t.inst((block, accesses[0])).machine.offset,
-                what,
-            })?;
+        let proof =
+            t.waterfall(block, &accesses, &reads)
+                .map_err(|what| ShaderError::Unsupported {
+                    offset: t.inst((block, accesses[0])).machine.offset,
+                    what,
+                })?;
         out.waterfall.compares.extend(proof.compares);
         out.waterfall.reads.extend(proof.reads);
     }
@@ -753,9 +753,10 @@ impl<'a> Tracer<'a> {
     /// [`Self::code_high`], at most `depth` additions deep.
     fn code_high_in(&self, t: Term, depth: u32) -> bool {
         let Term::Value(x) = t else { return false };
-        if self.def(x).is_some_and(|i| {
-            i.name() == "s_getpc_b64" && i.writes.get(1).is_some_and(|w| w.1 == x)
-        }) {
+        if self
+            .def(x)
+            .is_some_and(|i| i.name() == "s_getpc_b64" && i.writes.get(1).is_some_and(|w| w.1 == x))
+        {
             return true;
         }
         depth > 0
@@ -969,7 +970,11 @@ impl<'a> Tracer<'a> {
             // A join of paths into tables in the code is the byte in the code
             // already: each path's `s_getpc_b64` counts as its own offset.
             let joined = s.dynamic.is_some_and(|d| self.code_join(d).is_some());
-            let first = if joined { 0 } else { pc.machine.offset as u32 + 4 };
+            let first = if joined {
+                0
+            } else {
+                pc.machine.offset as u32 + 4
+            };
             return Ok(Address {
                 param: CODE,
                 offset: first.wrapping_add(s.offset).wrapping_add(extra.offset),
@@ -1527,7 +1532,6 @@ impl<'a> Tracer<'a> {
         };
         (x == d1).then_some([w0, d1, d2, d3])
     }
-
 
     /// For a `v_readfirstlane_b32` result: the VGPR value it reads.
     fn first_lane_source(&self, v: Value) -> Option<Value> {
@@ -2097,7 +2101,8 @@ impl<'a> Tracer<'a> {
                 } else {
                     continue;
                 };
-                let Some(matched) = mask(inst.write(Reg::S(code)), inst.write(Reg::S(code + 1))) else {
+                let Some(matched) = mask(inst.write(Reg::S(code)), inst.write(Reg::S(code + 1)))
+                else {
                     continue;
                 };
                 if meet(&[reach, (selected, true), (matched, false)]) {
@@ -2821,7 +2826,10 @@ pub(crate) mod tests {
         assert_eq!(r.scalar.len(), 1);
         let a = r.scalar[0].1;
         assert_eq!((a.param, a.offset), (CODE, 0));
-        assert!(a.dynamic.is_some(), "the join is the computed term, the byte in the code");
+        assert!(
+            a.dynamic.is_some(),
+            "the join is the computed term, the byte in the code"
+        );
     }
 
     /// An address into a table in the code computed per lane and taken from
@@ -3028,7 +3036,6 @@ pub(crate) mod tests {
         assert_eq!(value(2, 0), Term::Const(0x1850_0000));
         assert_eq!(value(2, 1), Term::Const(0));
     }
-
 
     #[test]
     fn a_selection_that_mixes_two_descriptors_fails() {
@@ -4123,19 +4130,19 @@ pub(crate) mod tests {
             0xBE84_0300u32, // s_mov_b32 s4, s0
             0xBE85_0380,    // s_mov_b32 s5, 0
             0xF40C_0302,
-            0xFA00_0000,    // s_load_dwordx8 s[12:19], s[4:5], 0x0
-            0x7E04_0D00,    // v_cvt_f32_u32 v2, v0
-            0x7E06_0302,    // v_mov_b32 v3, v2
-            0x7D88_0090,    // v_cmp_gt_u32 vcc_lo, 16, v0
-            0xBF8C_C07F,    // s_waitcnt lgkmcnt(0)
-            0x877E_6A7E,    // s_and_b32 exec_lo, exec_lo, vcc_lo
-            0xBF88_0004,    // s_cbranch_execz -> join (skips 4 dwords)
-            0xBE88_0380,    // s_mov_b32 s8, 0
-            0xBE89_0380,    // s_mov_b32 s9, 0
-            0xBE8A_0380,    // s_mov_b32 s10, 0
-            0xBE8B_0380,    // s_mov_b32 s11, 0
+            0xFA00_0000, // s_load_dwordx8 s[12:19], s[4:5], 0x0
+            0x7E04_0D00, // v_cvt_f32_u32 v2, v0
+            0x7E06_0302, // v_mov_b32 v3, v2
+            0x7D88_0090, // v_cmp_gt_u32 vcc_lo, 16, v0
+            0xBF8C_C07F, // s_waitcnt lgkmcnt(0)
+            0x877E_6A7E, // s_and_b32 exec_lo, exec_lo, vcc_lo
+            0xBF88_0004, // s_cbranch_execz -> join (skips 4 dwords)
+            0xBE88_0380, // s_mov_b32 s8, 0
+            0xBE89_0380, // s_mov_b32 s9, 0
+            0xBE8A_0380, // s_mov_b32 s10, 0
+            0xBE8B_0380, // s_mov_b32 s11, 0
             0xF09C_0F08,
-            0x0043_0C02,    // image_sample_lz v[12:15], v[2:3], s[12:19], s[8:11]
+            0x0043_0C02, // image_sample_lz v[12:15], v[2:3], s[12:19], s[8:11]
             S_ENDPGM,
         ]
         .iter()
@@ -4143,7 +4150,10 @@ pub(crate) mod tests {
         .collect();
         let p = crate::ir::build(&code, false, 256).unwrap();
         let structured = lanes(&p).expect("structured form");
-        assert!(structured.guards[2][0].is_some(), "join access must carry an EXEC guard");
+        assert!(
+            structured.guards[2][0].is_some(),
+            "join access must carry an EXEC guard"
+        );
         let r = track(&p, &[param(Table, 0, 1)], HwStage::Cs, Some(&structured)).unwrap();
         assert!(
             r.descriptors

@@ -26,7 +26,13 @@ fn folder() -> Result<PathBuf> {
     Ok(cfg.cache_subdir("shaders")?.with_file_name("pipelines"))
 }
 
-pub fn run(jobs: Option<usize>, limit: Option<usize>, again: bool, used: bool, these: Option<String>) -> Result<()> {
+pub fn run(
+    jobs: Option<usize>,
+    limit: Option<usize>,
+    again: bool,
+    used: bool,
+    these: Option<String>,
+) -> Result<()> {
     let dir = folder()?;
     if let Some(these) = these {
         return make(&dir, &these);
@@ -71,10 +77,25 @@ pub fn run(jobs: Option<usize>, limit: Option<usize>, again: bool, used: bool, t
     let chunks: Vec<&[usize]> = all.chunks(AT_ONCE).collect();
     let next = AtomicUsize::new(0);
     let state = Mutex::new((Vec::<f64>::new(), 0usize, 0usize));
-    let done_out = Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(&done_file)?);
+    let done_out = Mutex::new(
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&done_file)?,
+    );
     // (Read back by the runs: these are made beside the others, not before.)
-    let slow_out = Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(dir.join("slow-pipelines.txt"))?);
-    let bad_out = Mutex::new(std::fs::OpenOptions::new().create(true).append(true).open(&bad_file)?);
+    let slow_out = Mutex::new(
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("slow-pipelines.txt"))?,
+    );
+    let bad_out = Mutex::new(
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&bad_file)?,
+    );
     std::thread::scope(|s| {
         for _ in 0..jobs.min(chunks.len()) {
             s.spawn(|| {
@@ -90,7 +111,11 @@ pub fn run(jobs: Option<usize>, limit: Option<usize>, again: bool, used: bool, t
                             state.1 += usize::from(!there);
                             let count = state.0.len();
                             if count % 1000 == 0 {
-                                println!("{count} of {}, {:.0} s", all.len(), began.elapsed().as_secs_f64());
+                                println!(
+                                    "{count} of {}, {:.0} s",
+                                    all.len(),
+                                    began.elapsed().as_secs_f64()
+                                );
                             }
                             drop(state);
                             let _ = writeln!(lock(&done_out), "{fingerprint} {}", keys[n]);
@@ -113,7 +138,12 @@ pub fn run(jobs: Option<usize>, limit: Option<usize>, again: bool, used: bool, t
     });
     let (mut times, refused, crashed) = state.into_inner().unwrap_or_else(|e| e.into_inner());
     times.sort_by(f64::total_cmp);
-    let at = |q: f64| times.get((times.len() as f64 * q) as usize).copied().unwrap_or(0.0);
+    let at = |q: f64| {
+        times
+            .get((times.len() as f64 * q) as usize)
+            .copied()
+            .unwrap_or(0.0)
+    };
     println!(
         "{} made in {:.0} s ({refused} have no host pipeline, {crashed} ended their process); ms each: median {:.1}, p90 {:.1}, p99 {:.1}, most {:.0}, sum {:.0} s",
         times.len(),
@@ -145,8 +175,12 @@ fn child(these: &[usize], mut each: impl FnMut(usize, f64, bool)) -> (usize, Opt
             .creation_flags(IDLE_PRIORITY_CLASS)
             .spawn()
     });
-    let Ok(mut process) = spawned else { return (these.len(), None) };
-    let Some(out) = process.stdout.take() else { return (these.len(), None) };
+    let Ok(mut process) = spawned else {
+        return (these.len(), None);
+    };
+    let Some(out) = process.stdout.take() else {
+        return (these.len(), None);
+    };
     let process = Mutex::new(process);
     let (heard, over) = (Mutex::new(Instant::now()), AtomicBool::new(false));
     let hung = AtomicBool::new(false);
@@ -190,7 +224,10 @@ fn child(these: &[usize], mut each: impl FnMut(usize, f64, bool)) -> (usize, Opt
 
 /// What such a process does.
 fn make(dir: &Path, these: &str) -> Result<()> {
-    let these: Vec<usize> = these.split(',').map(|n| n.parse().context("--these")).collect::<Result<_>>()?;
+    let these: Vec<usize> = these
+        .split(',')
+        .map(|n| n.parse().context("--these"))
+        .collect::<Result<_>>()?;
     let cfg = sixm_core::Config::load()?;
     sixm_hle::known_pipelines::use_translations(cfg.cache_subdir("shaders")?);
     let mut out = std::io::stdout();

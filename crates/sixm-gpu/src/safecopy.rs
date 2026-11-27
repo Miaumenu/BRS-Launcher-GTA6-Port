@@ -145,7 +145,13 @@ unsafe extern "system" {
     fn sixm_safe_put_at();
     fn sixm_safe_put_after();
     fn sixm_safe_put_failed();
-    fn sixm_safe_merge(title: *mut u8, now: *const u8, held: *mut u8, blocks: usize, counts: *mut [u64; 2]) -> usize;
+    fn sixm_safe_merge(
+        title: *mut u8,
+        now: *const u8,
+        held: *mut u8,
+        blocks: usize,
+        counts: *mut [u64; 2],
+    ) -> usize;
     fn sixm_safe_merge_at();
     fn sixm_safe_merge_after();
     fn sixm_safe_merge_failed();
@@ -178,8 +184,17 @@ pub(crate) struct Merged {
 /// else writes (but for `now` the card: it is read once); `title` is as
 /// [`copy`]'s. The stretch lies in one page of 4 KiB of title memory. [`on`]
 /// must have been asked.
-pub(crate) unsafe fn merge(title: *mut u8, now: *const u8, held: *mut u8, len: usize, take: bool) -> Merged {
-    let mut out = Merged { there: true, ..Merged::default() };
+pub(crate) unsafe fn merge(
+    title: *mut u8,
+    now: *const u8,
+    held: *mut u8,
+    len: usize,
+    take: bool,
+) -> Merged {
+    let mut out = Merged {
+        there: true,
+        ..Merged::default()
+    };
     let mut at = 0;
     while at < len {
         let address = title.addr() + at;
@@ -218,22 +233,42 @@ pub(crate) unsafe fn merge(title: *mut u8, now: *const u8, held: *mut u8, len: u
             unsafe {
                 std::ptr::copy_nonoverlapping(now.add(at), new.as_mut_ptr().add(into), n);
                 std::ptr::copy_nonoverlapping(held.add(at), old.as_mut_ptr().add(into), n);
-                let stuck = sixm_safe_merge(title.wrapping_add(at).wrapping_sub(into), new.as_ptr(), old.as_mut_ptr(), 1, &mut counts);
+                let stuck = sixm_safe_merge(
+                    title.wrapping_add(at).wrapping_sub(into),
+                    new.as_ptr(),
+                    old.as_mut_ptr(),
+                    1,
+                    &mut counts,
+                );
                 out.there &= stuck == 0;
-                let from = if stuck != 0 && take { new.as_ptr() } else { old.as_ptr() };
+                let from = if stuck != 0 && take {
+                    new.as_ptr()
+                } else {
+                    old.as_ptr()
+                };
                 std::ptr::copy_nonoverlapping(from.add(into), held.add(at), n);
             }
             at += n;
         } else {
             let blocks = left / 32;
             // SAFETY: whole blocks of the stretch.
-            let stuck = unsafe { sixm_safe_merge(title.add(at), now.add(at), held.add(at), blocks, &mut counts) };
+            let stuck = unsafe {
+                sixm_safe_merge(
+                    title.add(at),
+                    now.add(at),
+                    held.add(at),
+                    blocks,
+                    &mut counts,
+                )
+            };
             if stuck != 0 {
                 out.there = false;
                 if take {
                     let from = at + (blocks - stuck) * 32;
                     // SAFETY: the blocks that were not done.
-                    unsafe { std::ptr::copy_nonoverlapping(now.add(from), held.add(from), stuck * 32) };
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(now.add(from), held.add(from), stuck * 32)
+                    };
                 }
             }
             at += blocks * 32;
@@ -249,7 +284,10 @@ pub(crate) unsafe fn merge(title: *mut u8, now: *const u8, held: *mut u8, len: u
 /// # Safety
 /// Both are `len` bytes that can be read; the card may be writing them.
 pub(crate) unsafe fn differ(a: *const u8, b: *const u8, len: usize) -> bool {
-    use std::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_or_si256, _mm256_setzero_si256, _mm256_testz_si256, _mm256_xor_si256};
+    use std::arch::x86_64::{
+        __m256i, _mm256_loadu_si256, _mm256_or_si256, _mm256_setzero_si256, _mm256_testz_si256,
+        _mm256_xor_si256,
+    };
     /// # Safety
     /// [`differ`]'s; the processor has AVX2 (as the code above assumes).
     #[target_feature(enable = "avx2")]
@@ -260,7 +298,10 @@ pub(crate) unsafe fn differ(a: *const u8, b: *const u8, len: usize) -> bool {
             for k in at..n.min(at + 4) {
                 // SAFETY: block `k`, inside both.
                 let (x, y) = unsafe {
-                    (_mm256_loadu_si256(a.add(k * 32).cast::<__m256i>()), _mm256_loadu_si256(b.add(k * 32).cast::<__m256i>()))
+                    (
+                        _mm256_loadu_si256(a.add(k * 32).cast::<__m256i>()),
+                        _mm256_loadu_si256(b.add(k * 32).cast::<__m256i>()),
+                    )
                 };
                 any = _mm256_or_si256(any, _mm256_xor_si256(x, y));
             }
@@ -297,7 +338,14 @@ pub(crate) unsafe fn put_changed(dst: *mut u8, was: &[u8], now: &[u8]) -> bool {
     if blocks > 0 {
         // SAFETY: the two slices hold the blocks; the destination's faults
         // leave through the failing exit.
-        all &= unsafe { sixm_safe_put(dst.add(head), was[head..].as_ptr(), now[head..].as_ptr(), blocks) != 0 };
+        all &= unsafe {
+            sixm_safe_put(
+                dst.add(head),
+                was[head..].as_ptr(),
+                now[head..].as_ptr(),
+                blocks,
+            ) != 0
+        };
     }
     let single = |from: usize, to: usize| {
         let mut all = true;
@@ -346,24 +394,35 @@ pub(crate) unsafe fn copy(dst: *mut u8, src: *const u8, len: usize) -> bool {
 /// For the fault handler: where a fault at instruction `at` is to go on, if
 /// it is [`copy`]'s.
 pub(crate) fn failing_exit(at: usize) -> Option<usize> {
-    let (from, to) = (sixm_safe_copy_at as *const () as usize, sixm_safe_copy_after as *const () as usize);
+    let (from, to) = (
+        sixm_safe_copy_at as *const () as usize,
+        sixm_safe_copy_after as *const () as usize,
+    );
     if (from..to).contains(&at) {
         return Some(sixm_safe_copy_failed as *const () as usize);
     }
-    let (from, to) = (sixm_safe_put_at as *const () as usize, sixm_safe_put_after as *const () as usize);
+    let (from, to) = (
+        sixm_safe_put_at as *const () as usize,
+        sixm_safe_put_after as *const () as usize,
+    );
     if (from..to).contains(&at) {
         return Some(sixm_safe_put_failed as *const () as usize);
     }
-    let (from, to) = (sixm_safe_merge_at as *const () as usize, sixm_safe_merge_after as *const () as usize);
-    (from..to).contains(&at).then_some(sixm_safe_merge_failed as *const () as usize)
+    let (from, to) = (
+        sixm_safe_merge_at as *const () as usize,
+        sixm_safe_merge_after as *const () as usize,
+    );
+    (from..to)
+        .contains(&at)
+        .then_some(sixm_safe_merge_failed as *const () as usize)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use windows_sys::Win32::System::Memory::{
-        MEM_COMMIT, MEM_DECOMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_NOACCESS, PAGE_READONLY, PAGE_READWRITE, VirtualAlloc,
-        VirtualFree, VirtualProtect,
+        MEM_COMMIT, MEM_DECOMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_NOACCESS, PAGE_READONLY,
+        PAGE_READWRITE, VirtualAlloc, VirtualFree, VirtualProtect,
     };
 
     struct Pages(*mut u8, usize);
@@ -371,7 +430,14 @@ mod tests {
     impl Pages {
         fn new(len: usize) -> Pages {
             // SAFETY: plain allocation.
-            let at = unsafe { VirtualAlloc(std::ptr::null(), len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE) };
+            let at = unsafe {
+                VirtualAlloc(
+                    std::ptr::null(),
+                    len,
+                    MEM_RESERVE | MEM_COMMIT,
+                    PAGE_READWRITE,
+                )
+            };
             assert!(!at.is_null());
             Pages(at.cast(), len)
         }
@@ -401,7 +467,10 @@ mod tests {
                 unsafe {
                     std::ptr::write_bytes(b.0, 0xEE, b.1);
                     assert!(copy(b.0.add(da), a.0.add(sa), len));
-                    let (to, from) = (std::slice::from_raw_parts(b.0, b.1), std::slice::from_raw_parts(a.0, a.1));
+                    let (to, from) = (
+                        std::slice::from_raw_parts(b.0, b.1),
+                        std::slice::from_raw_parts(a.0, a.1),
+                    );
                     assert_eq!(to[da..da + len], from[sa..sa + len]);
                     assert!(to[..da].iter().chain(&to[da + len..]).all(|&x| x == 0xEE));
                 }
@@ -433,13 +502,16 @@ mod tests {
                         for (k, &byte) in there.iter().enumerate() {
                             let expect = if (at..at + len).contains(&k) {
                                 let dword = (base + k) / 4;
-                                let changed = (0..len).any(|i| now[i] != was[i] && (base + at + i) / 4 == dword);
+                                let changed = (0..len)
+                                    .any(|i| now[i] != was[i] && (base + at + i) / 4 == dword);
                                 if changed { now[k - at] } else { 0xC3 }
                             } else {
                                 0xC3
                             };
                             if byte != expect {
-                                panic!("at {at} len {len} step {step} byte {k}: {byte:#x}, not {expect:#x}");
+                                panic!(
+                                    "at {at} len {len} step {step} byte {k}: {byte:#x}, not {expect:#x}"
+                                );
                             }
                             if k > at + len + 64 {
                                 break;
@@ -493,7 +565,11 @@ mod tests {
                     now[i] = random() as u8;
                 }
                 let i = random() as usize % 512;
-                title[i] = if (from..to).contains(&i) && round % 3 == 0 { now[i - from] } else { random() as u8 };
+                title[i] = if (from..to).contains(&i) && round % 3 == 0 {
+                    now[i - from]
+                } else {
+                    random() as u8
+                };
             }
             if round % 7 == 0 {
                 now.iter_mut().for_each(|b| *b = b.wrapping_add(1));
@@ -501,7 +577,13 @@ mod tests {
             // SAFETY: inside the allocation and the vectors.
             let done = unsafe {
                 std::ptr::copy_nonoverlapping(title.as_ptr(), pages.0, 512);
-                merge(pages.0.add(from), now.as_ptr(), held.as_mut_ptr(), n, round % 2 == 0)
+                merge(
+                    pages.0.add(from),
+                    now.as_ptr(),
+                    held.as_mut_ptr(),
+                    n,
+                    round % 2 == 0,
+                )
             };
             assert!(done.there);
             // SAFETY: inside the allocation.
@@ -515,8 +597,16 @@ mod tests {
             assert_eq!(done.new == 0, was == now);
             // Found merged already.
             // SAFETY: as above.
-            let again = unsafe { merge(pages.0.add(from), now.as_ptr(), held.as_mut_ptr(), n, false) };
-            assert_eq!(again, Merged { new: 0, dwords: 0, there: true });
+            let again =
+                unsafe { merge(pages.0.add(from), now.as_ptr(), held.as_mut_ptr(), n, false) };
+            assert_eq!(
+                again,
+                Merged {
+                    new: 0,
+                    dwords: 0,
+                    there: true
+                }
+            );
         }
     }
 
@@ -547,11 +637,23 @@ mod tests {
                     done
                 };
                 assert!(!done.there);
-                assert_eq!(held, if take { now.clone() } else { was.clone() }, "{missing} {take} {at} {len}");
+                assert_eq!(
+                    held,
+                    if take { now.clone() } else { was.clone() },
+                    "{missing} {take} {at} {len}"
+                );
                 // Nothing to put: nothing fails.
                 let mut held = now.clone();
                 // SAFETY: as above; the addresses are no one's.
-                let done = unsafe { merge(std::ptr::without_provenance_mut(0x1000 + at), now.as_ptr(), held.as_mut_ptr(), len, take) };
+                let done = unsafe {
+                    merge(
+                        std::ptr::without_provenance_mut(0x1000 + at),
+                        now.as_ptr(),
+                        held.as_mut_ptr(),
+                        len,
+                        take,
+                    )
+                };
                 assert!(done.there && done.new == 0);
             }
         }
@@ -578,7 +680,11 @@ mod tests {
                         while !stop.load(Ordering::Relaxed) {
                             for i in (w..1024).step_by(4) {
                                 // This thread's own dword: nobody else's value.
-                                assert_eq!(dword(i).load(Ordering::Relaxed), value - 1, "dword {i}");
+                                assert_eq!(
+                                    dword(i).load(Ordering::Relaxed),
+                                    value - 1,
+                                    "dword {i}"
+                                );
                                 dword(i).store(value, Ordering::Relaxed);
                             }
                             value += 1;
@@ -596,7 +702,15 @@ mod tests {
                     }
                 }
                 // SAFETY: the allocation, whole.
-                let done = unsafe { merge(base as *mut u8, now.as_ptr(), held.as_mut_ptr(), 4096, false) };
+                let done = unsafe {
+                    merge(
+                        base as *mut u8,
+                        now.as_ptr(),
+                        held.as_mut_ptr(),
+                        4096,
+                        false,
+                    )
+                };
                 assert!(done.there);
                 for i in (2..1024).step_by(4) {
                     let expect = u32::from_le_bytes(now[i * 4..i * 4 + 4].try_into().unwrap());
@@ -636,14 +750,19 @@ mod tests {
         use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
         use windows_sys::Win32::System::Threading::GetCurrentProcess;
         assert!(on());
-        let Some(host) = crate::host::host() else { return };
+        let Some(host) = crate::host::host() else {
+            return;
+        };
         const N: usize = 128 << 20;
         let from = Pages::new(N);
         from.fill();
         let (_buffer, shared) = host.shared_buffer(N as u64).expect("a shared buffer");
         let plain = Pages::new(N);
         plain.fill();
-        for (what, to) in [("a buffer the card reads", shared), ("plain memory", plain.0)] {
+        for (what, to) in [
+            ("a buffer the card reads", shared),
+            ("plain memory", plain.0),
+        ] {
             for piece in [256usize, 4 << 10, 64 << 10] {
                 let count = (N / piece).min(4096);
                 // A different, scattered piece each time.
@@ -657,12 +776,21 @@ mod tests {
                         }
                         best = best.min(t.elapsed().as_secs_f64());
                     }
-                    (best * 1e6 / count as f64, count as f64 * piece as f64 / best / 1e9)
+                    (
+                        best * 1e6 / count as f64,
+                        count as f64 * piece as f64 / best / 1e9,
+                    )
                 };
                 // SAFETY: inside the buffers.
                 let kernel = time(&|o| unsafe {
                     let mut done = 0;
-                    ReadProcessMemory(GetCurrentProcess(), from.0.add(o).cast(), to.add(o).cast(), piece, &mut done) != 0
+                    ReadProcessMemory(
+                        GetCurrentProcess(),
+                        from.0.add(o).cast(),
+                        to.add(o).cast(),
+                        piece,
+                        &mut done,
+                    ) != 0
                 });
                 // SAFETY: as above.
                 let here = time(&|o| unsafe { copy(to.add(o), from.0.add(o), piece) });

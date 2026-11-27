@@ -86,44 +86,46 @@ mod container;
 mod cube_lod_tests;
 #[cfg(all(test, windows))]
 mod diff_tests;
-#[cfg(all(test, windows))]
-mod intersect_tests;
 #[cfg(all(windows, any(test, feature = "host")))]
 pub mod host;
+#[cfg(all(test, windows))]
+mod intersect_tests;
 mod lower;
 mod own_bits;
 #[cfg(all(test, windows))]
 mod permlane_tests;
+#[cfg(all(test, windows))]
+mod probe_tests;
 mod rect;
 mod sampler;
 mod shader;
+#[cfg(all(test, windows))]
+mod size_tests;
 mod threading;
 #[cfg(windows)]
 pub mod validator;
 #[cfg(all(test, windows))]
-mod probe_tests;
-#[cfg(all(test, windows))]
-mod size_tests;
-#[cfg(all(test, windows))]
 mod valu_tests;
 #[cfg(all(test, windows))]
 mod waterfall_tests;
+mod wave;
 #[cfg(all(test, windows))]
 mod wave64_tests;
-mod wave;
 
 use crate::dxbc::{Container, FourCC};
 use crate::native::{HwStage, NativeProgram, RootType};
 use crate::{ShaderError, io, ir, resource, structure};
 
 pub use bitcode::census;
-pub use sampler::StaticSampler;
 pub use lower::{host_settings, set_host_max_wave, set_host_min_wave, set_host_rdna};
 pub use rect::rect_list_gs;
+pub use sampler::StaticSampler;
 pub use shader::{
-    MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS, SLOT_MEMORY, SLOT_STRIDES,
-    SLOT_STRIDES_COUNT, SLOT_TABLE_STRIDES, USER_DATA_SPACE, VIEW_INTEGER, VIEW_SIGNED, VIEW_STRIDE_BITS, USER_DISPATCH_THREADS_X, USER_MEMORY_BASE, USER_ROOT_ADDRESS, USER_VIEW_ADDRESS, USER_VIEW_BIAS,
-    raw_views, set_raw_views, set_view_heap_limit, view_heap_limit,
+    MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS,
+    SLOT_MEMORY, SLOT_STRIDES, SLOT_STRIDES_COUNT, SLOT_TABLE_STRIDES, USER_DATA_SPACE,
+    USER_DISPATCH_THREADS_X, USER_MEMORY_BASE, USER_ROOT_ADDRESS, USER_VIEW_ADDRESS,
+    USER_VIEW_BIAS, VIEW_INTEGER, VIEW_SIGNED, VIEW_STRIDE_BITS, raw_views, set_raw_views,
+    set_view_heap_limit, view_heap_limit,
 };
 
 /// The loop limit without an override: 2^20.
@@ -177,10 +179,16 @@ pub fn helper_own() -> bool {
 /// does).
 pub fn group_sync() -> u8 {
     static MODE: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("SIXM_GROUP_SYNC").ok().as_deref().map(str::trim) {
-        Some("0") => 0,
-        Some("1") => 1,
-        _ => 2,
+    *MODE.get_or_init(|| {
+        match std::env::var("SIXM_GROUP_SYNC")
+            .ok()
+            .as_deref()
+            .map(str::trim)
+        {
+            Some("0") => 0,
+            Some("1") => 1,
+            _ => 2,
+        }
     })
 }
 
@@ -285,7 +293,10 @@ pub fn translation_fingerprint() -> Vec<u8> {
     out.extend_from_slice(env!("SIXM_SHADER_SOURCE_HASH").as_bytes());
     out.push(u8::from(cfg!(feature = "diagnostics")));
     out.push(u8::from(cfg!(debug_assertions)));
-    for name in env!("SIXM_SHADER_SWITCHES").split(',').filter(|n| !n.is_empty()) {
+    for name in env!("SIXM_SHADER_SWITCHES")
+        .split(',')
+        .filter(|n| !n.is_empty())
+    {
         out.extend_from_slice(name.as_bytes());
         out.push(b'=');
         if let Some(value) = std::env::var_os(name) {
@@ -478,7 +489,9 @@ pub fn emit(
             Ok(()) => true,
             Err((offset, what)) => {
                 if why {
-                    eprintln!("WAVE64-RETRY local waves: not the allocation idiom at {offset:#x}: {what}");
+                    eprintln!(
+                        "WAVE64-RETRY local waves: not the allocation idiom at {offset:#x}: {what}"
+                    );
                 }
                 false
             }
@@ -522,8 +535,14 @@ pub fn emit(
             Some((p, st, io, res))
         };
         let forms = [
-            ("without early-outs", form("without early-outs", ir::without_early_outs(p))),
-            ("without skips", form("without skips", ir::without_skips(p, false))),
+            (
+                "without early-outs",
+                form("without early-outs", ir::without_early_outs(p)),
+            ),
+            (
+                "without skips",
+                form("without skips", ir::without_skips(p, false)),
+            ),
         ];
         for (name, f) in &forms {
             if let Some((p, st, io, res)) = f {
@@ -545,8 +564,13 @@ pub fn emit(
         let scene_kernel = matches!(native.io, crate::native::StageIo::Cs(cs) if cs.threads.iter().product::<u32>() == 64)
             && matches!(
                 c.digest,
-                [0x58, 0x1d, 0xab, 0x2c, 0xd8, 0xbc, 0xf2, 0x2e, 0x5c, 0x96, 0x4b, 0x98, 0xe9, 0x03, 0x48, 0xd1]
-                    | [0x24, 0x31, 0xbb, 0xe7, 0xdc, 0x15, 0x4a, 0xd7, 0x59, 0xd2, 0x0b, 0xc9, 0x54, 0x82, 0x9c, 0x1c]
+                [
+                    0x58, 0x1d, 0xab, 0x2c, 0xd8, 0xbc, 0xf2, 0x2e, 0x5c, 0x96, 0x4b, 0x98, 0xe9,
+                    0x03, 0x48, 0xd1
+                ] | [
+                    0x24, 0x31, 0xbb, 0xe7, 0xdc, 0x15, 0x4a, 0xd7, 0x59, 0xd2, 0x0b, 0xc9, 0x54,
+                    0x82, 0x9c, 0x1c
+                ]
             );
         let wide_on = wide_option.as_ref().map_or(scene_kernel, |v| v == "1");
         // A single guest wave can iterate an active-lane loop until both host
@@ -567,7 +591,14 @@ pub fn emit(
                 // lane runs, where the two host waves can exchange.
                 // (`SIXM_WAVE_DEEP_SKIPS=0` and `SIXM_WAVE_WIDE=0` turn the two off.)
                 let deep_on = std::env::var_os("SIXM_WAVE_DEEP_SKIPS").is_none_or(|v| v != "0");
-                let deep = if deep_on { form("without skips, scalars followed", ir::without_skips(p, true)) } else { None };
+                let deep = if deep_on {
+                    form(
+                        "without skips, scalars followed",
+                        ir::without_skips(p, true),
+                    )
+                } else {
+                    None
+                };
                 if let Some((p, st, io, res)) = &deep {
                     let again = emit_program(c, native, p, st, io, res);
                     report("without skips, scalars followed", &again);
@@ -605,7 +636,13 @@ pub fn emit(
                     && idiom(p, st) == exact
                 {
                     let local = lower::with_local_waves(|| emit_program(c, native, p, st, io, res));
-                    report(&format!("local waves ({}), {name}", if exact { "idiom" } else { "APPROXIMATE" }), &local);
+                    report(
+                        &format!(
+                            "local waves ({}), {name}",
+                            if exact { "idiom" } else { "APPROXIMATE" }
+                        ),
+                        &local,
+                    );
                     if done(&local) {
                         return local.map(|(shader, _)| shader);
                     }
@@ -613,7 +650,14 @@ pub fn emit(
             }
             if idiom(p, st) == exact {
                 let local = lower::with_local_waves(|| emit_program(c, native, p, st, io, res));
-                report(if exact { "local waves (idiom)" } else { "local waves (APPROXIMATE)" }, &local);
+                report(
+                    if exact {
+                        "local waves (idiom)"
+                    } else {
+                        "local waves (APPROXIMATE)"
+                    },
+                    &local,
+                );
                 if done(&local) {
                     return local.map(|(shader, _)| shader);
                 }
@@ -624,8 +668,12 @@ pub fn emit(
             if !strict {
                 for (name, f) in &forms {
                     if let Some((p, st, io, res)) = f {
-                        let local = lower::with_local_waves_any(|| emit_program(c, native, p, st, io, res));
-                        report(&format!("local waves (APPROXIMATE, any mask), {name}"), &local);
+                        let local =
+                            lower::with_local_waves_any(|| emit_program(c, native, p, st, io, res));
+                        report(
+                            &format!("local waves (APPROXIMATE, any mask), {name}"),
+                            &local,
+                        );
                         if done(&local) {
                             return local.map(|(shader, _)| shader);
                         }
@@ -648,7 +696,13 @@ pub fn emit(
                 && what == lower::LANE_MASK
                 && std::env::var_os("SIXM_WAVE_WIDE").is_none_or(|v| v != "0") =>
         {
-            let again = widen(c, native, p, std::env::var_os("SIXM_WAVE_WHY").is_some(), false);
+            let again = widen(
+                c,
+                native,
+                p,
+                std::env::var_os("SIXM_WAVE_WHY").is_some(),
+                false,
+            );
             match again {
                 Ok(_) => again,
                 Err(_) => emit_program(c, native, p, st, io, res),
@@ -743,7 +797,11 @@ fn widen(
                         format!("B{b}({nm}{})", if back { ",BACK" } else { "" })
                     })
                     .collect();
-                eprintln!("WAVE64-WIDE {} branches taken wave-wide: [{}]", wide.len(), desc.join(", "));
+                eprintln!(
+                    "WAVE64-WIDE {} branches taken wave-wide: [{}]",
+                    wide.len(),
+                    desc.join(", ")
+                );
             }
             return r;
         }
@@ -754,7 +812,10 @@ fn widen(
             .collect();
         if more.is_empty() {
             if why {
-                eprintln!("WAVE64-WIDE stopped with {} branches wave-wide: a branch around it cannot be", wide.len());
+                eprintln!(
+                    "WAVE64-WIDE stopped with {} branches wave-wide: a branch around it cannot be",
+                    wide.len()
+                );
             }
             return r;
         }
@@ -940,7 +1001,9 @@ fn vertex_output_interpolation(
             continue;
         }
         if record[13] > 7 {
-            return Err(ShaderError::Malformed("invalid vertex output interpolation"));
+            return Err(ShaderError::Malformed(
+                "invalid vertex output interpolation",
+            ));
         }
         let first = u32::from(record[9]);
         let rows = first..first + u32::from(record[8]);
@@ -1102,7 +1165,7 @@ mod tests {
             let [w0, w1] = p2(dst_high, omod, clamp);
             let words = [
                 0x7E06_0301u32, // v_mov_b32 v3, v1
-                0xC808_0000, // v_interp_p1_f32 v2, v0, attr0.x
+                0xC808_0000,    // v_interp_p1_f32 v2, v0, attr0.x
                 w0,
                 w1, // v_interp_p2_f16 v3, attr0, v1, v2
                 0xF800_180F,
@@ -1760,19 +1823,16 @@ mod tests {
         // v2, v3: position x, y (input address: POS_X and POS_Y after the
         // two perspective barycentrics).
         let swizzle = |dst: u32, src: u32, pattern: u32| {
-            [
-                0xD800_0000 | 0x35 << 18 | 0x8000 | pattern,
-                dst << 24 | src,
-            ]
+            [0xD800_0000 | 0x35 << 18 | 0x8000 | pattern, dst << 24 | src]
         };
         let mut words = vec![0xBEFC_0380u32]; // s_mov_b32 m0, 0
         words.extend(swizzle(4, 2, 0xB1)); // lanes 1 0 3 2
         words.extend(swizzle(5, 3, 0x4E)); // lanes 2 3 0 1
         words.extend(swizzle(6, 2, 0xA0)); // lanes 0 0 2 2
         words.extend([
-            0x0808_0504,  // v_sub_f32 v4, v4, v2
-            0x080A_0705,  // v_sub_f32 v5, v5, v3
-            0x080C_0506,  // v_sub_f32 v6, v6, v2
+            0x0808_0504, // v_sub_f32 v4, v4, v2
+            0x080A_0705, // v_sub_f32 v5, v5, v3
+            0x080C_0506, // v_sub_f32 v6, v6, v2
             0xF800_180F,
             0x0302_0504, // exp mrt0 v4, v5, v2, v3 done vm
             0xBF81_0000,
@@ -1847,8 +1907,16 @@ mod tests {
                     },
                 )
                 .unwrap_or_else(|e| panic!("{label}: draw: {e}"));
-            let lit: Vec<(usize, &[f32; 4])> = texels.iter().enumerate().filter(|t| t.1[2] != 0.0).collect();
-            assert!((20..240).contains(&lit.len()), "{label}: {} texels lit", lit.len());
+            let lit: Vec<(usize, &[f32; 4])> = texels
+                .iter()
+                .enumerate()
+                .filter(|t| t.1[2] != 0.0)
+                .collect();
+            assert!(
+                (20..240).contains(&lit.len()),
+                "{label}: {} texels lit",
+                lit.len()
+            );
             let bad: Vec<_> = lit
                 .iter()
                 .filter(|(n, t)| {
@@ -1857,7 +1925,13 @@ mod tests {
                     (t[0], t[1]) != (x, y)
                 })
                 .collect();
-            assert!(bad.is_empty(), "{label}: {} of {} texels: {:?}", bad.len(), lit.len(), bad[0]);
+            assert!(
+                bad.is_empty(),
+                "{label}: {} of {} texels: {:?}",
+                bad.len(),
+                lit.len(),
+                bad[0]
+            );
         }
     }
 
@@ -2104,8 +2178,7 @@ mod tests {
             let c = super::Container::parse(&bytes).unwrap();
             let p = crate::ir::build(&native.patched_code(), native.wave64, native.vgprs).unwrap();
             let st = crate::structure::structure(&p).unwrap();
-            let res =
-                crate::resource::track(&p, &native.layout, native.stage, Some(&st)).unwrap();
+            let res = crate::resource::track(&p, &native.layout, native.stage, Some(&st)).unwrap();
             let io = crate::io::raise(&p, &native).unwrap();
             let out = super::emit(&c, &native, &p, &st, &io, &res).unwrap();
             // dxil.dll, where there is one, checks PSV0 against the module.
@@ -2248,7 +2321,10 @@ mod tests {
                     slot: 1,
                 },
             ],
-            used: vec![table(crate::ResourceType::Srv, 0), table(crate::ResourceType::Uav, 8)],
+            used: vec![
+                table(crate::ResourceType::Srv, 0),
+                table(crate::ResourceType::Uav, 8),
+            ],
             io: crate::native::StageIo::Cs(crate::native::ComputeIo {
                 rsrc2: 5 << 1,
                 threads: [1, 1, 1],
@@ -2279,7 +2355,9 @@ mod tests {
         ) {
             v.validate(&mut dxil).unwrap();
         }
-        let _one = super::valu_tests::ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let _one = super::valu_tests::ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let Ok(host) = super::host::Host::new(true) else {
             eprintln!("no software adapter; the dispatch is skipped");
             return;
@@ -2297,9 +2375,15 @@ mod tests {
         };
         let (root, pso) = host.compute_pipeline(&cs).unwrap();
         // Twelve dwords: the loads below run across the view's end.
-        let data: Vec<u32> = (0..12u32).map(|i| 0x1111_1111u32.wrapping_mul(i + 1) ^ 0x8000_0000).collect();
+        let data: Vec<u32> = (0..12u32)
+            .map(|i| 0x1111_1111u32.wrapping_mul(i + 1) ^ 0x8000_0000)
+            .collect();
         let dword = |byte: u64| -> u32 {
-            if byte.is_multiple_of(4) && byte + 4 <= 4 * data.len() as u64 { data[(byte / 4) as usize] } else { 0 }
+            if byte.is_multiple_of(4) && byte + 4 <= 4 * data.len() as u64 {
+                data[(byte / 4) as usize]
+            } else {
+                0
+            }
         };
         for (s0, s1) in [(0u32, 0u32), (16, 0), (24, 4), (40, 28), (48, 44), (8, 12)] {
             let out = host
@@ -2325,8 +2409,15 @@ mod tests {
             for (&(_, n), start) in LOADS.iter().zip(starts) {
                 want.extend((0..u64::from(n)).map(|k| dword(start + 4 * k)));
             }
-            eprintln!("offsets {s0} and {s1}, four dwords a call: {wide}: {:x?}", &out[0][..28]);
-            assert_eq!(out[0][..28], want[..], "offsets {s0} and {s1}, four dwords a call: {wide}");
+            eprintln!(
+                "offsets {s0} and {s1}, four dwords a call: {wide}: {:x?}",
+                &out[0][..28]
+            );
+            assert_eq!(
+                out[0][..28],
+                want[..],
+                "offsets {s0} and {s1}, four dwords a call: {wide}"
+            );
         }
     }
 
@@ -2624,7 +2715,11 @@ mod barycentric_tests {
         pixel_with_inputs(words, input_addr, &[element("TEXCOORD", 0, 0)])
     }
 
-    fn pixel_with_inputs(words: &[u32], input_addr: u32, inputs: &[container::SigElement]) -> Result<HostShader, ShaderError> {
+    fn pixel_with_inputs(
+        words: &[u32],
+        input_addr: u32,
+        inputs: &[container::SigElement],
+    ) -> Result<HostShader, ShaderError> {
         let native = NativeProgram {
             stage: HwStage::Ps,
             wave64: false,
@@ -2666,8 +2761,15 @@ mod barycentric_tests {
         let [e0, e1] = exp_mrt0(3);
         // v_interp_mov_f32 v3, p0, attr0.z followed by exp mrt0.
         let words = [0xC80E_0202, e0, e1, 0xBF81_0000];
-        let xy = container::SigElement { cols: 2, ..element("TEXCOORD", 0, 0) };
-        let zw = container::SigElement { col: 2, cols: 2, ..element("NORMAL", 0, 0) };
+        let xy = container::SigElement {
+            cols: 2,
+            ..element("TEXCOORD", 0, 0)
+        };
+        let zw = container::SigElement {
+            col: 2,
+            cols: 2,
+            ..element("NORMAL", 0, 0)
+        };
         let shader = pixel_with_inputs(&words, PERSP_CENTER, &[xy, zw]).unwrap();
         let c = Container::parse(&shader.dxil).unwrap();
         let psv = c.part(FourCC::PSV0).unwrap().data;
@@ -2686,18 +2788,21 @@ mod barycentric_tests {
     fn a_pixel_first_lane_loop_serves_helper_lanes() {
         let shader = pixel(
             &[
-                0xD765_0000, 0x0001_00C1, // v_mbcnt_lo_u32_b32 v0, -1, 0
+                0xD765_0000,
+                0x0001_00C1, // v_mbcnt_lo_u32_b32 v0, -1, 0
                 0x7E02_0280, // v_mov_b32 v1, 0
                 0xBE97_037E, // s_mov_b32 s23, exec_lo
                 0x7E18_0500, // v_readfirstlane_b32 s12, v0
                 0x7D84_000C, // v_cmp_eq_u32 vcc, s12, v0
                 0xBE95_3C6A, // s_and_saveexec_b32 s21, vcc_lo
                 0xBF80_0000, // s_nop 0
-                0x7E02_02FF, 0x3F80_0000, // v_mov_b32 v1, 1.0
+                0x7E02_02FF,
+                0x3F80_0000, // v_mov_b32 v1, 1.0
                 0x897E_157E, // s_xor_b32 exec_lo, exec_lo, s21
                 0xBF89_FFF8, // s_cbranch_execnz loop
                 0xBEFE_0317, // s_mov_b32 exec_lo, s23
-                0xF800_180F, 0x0101_0101, // exp mrt0 v1 v1 v1 v1 done vm
+                0xF800_180F,
+                0x0101_0101, // exp mrt0 v1 v1 v1 v1 done vm
                 0xBF81_0000, // s_endpgm
             ],
             0,

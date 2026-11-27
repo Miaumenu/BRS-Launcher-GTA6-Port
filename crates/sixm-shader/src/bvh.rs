@@ -296,9 +296,17 @@ pub(crate) mod tests {
     fn an_empty_slot_is_never_entered() {
         let inside = |x: f32| [x - 1.0, -1.0, -1.0, x + 1.0, 1.0, 1.0];
         let (up, down) = (f32::INFINITY, f32::NEG_INFINITY);
-        let bounds = [inside(30.0), [up, up, up, down, down, down], inside(10.0), [up, up, up, down, down, down]];
+        let bounds = [
+            inside(30.0),
+            [up, up, up, down, down, down],
+            inside(10.0),
+            [up, up, up, down, down, down],
+        ];
         let ray = Ray::new([0.0; 3], [1.0, 0.0, 0.0], 100.0);
-        assert_eq!(boxes(&[8, NONE, 16, NONE], &bounds, &ray, true), [16, 8, NONE, NONE]);
+        assert_eq!(
+            boxes(&[8, NONE, 16, NONE], &bounds, &ray, true),
+            [16, 8, NONE, NONE]
+        );
     }
 
     /// The smallest 16-bit float not below `x` (`up`) or not above it.

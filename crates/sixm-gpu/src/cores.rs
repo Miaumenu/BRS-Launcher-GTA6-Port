@@ -5,19 +5,37 @@
 /// The system's processor sets of group 0: each one's id and its efficiency
 /// class (higher is faster).
 fn cpu_sets() -> Vec<(u32, u8)> {
-    use windows_sys::Win32::System::SystemInformation::{GetSystemCpuSetInformation, SYSTEM_CPU_SET_INFORMATION};
+    use windows_sys::Win32::System::SystemInformation::{
+        GetSystemCpuSetInformation, SYSTEM_CPU_SET_INFORMATION,
+    };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
     let mut bytes = 0u32;
     // SAFETY: a size query, then the call into a buffer of that size.
-    unsafe { GetSystemCpuSetInformation(std::ptr::null_mut(), 0, &mut bytes, GetCurrentProcess(), 0) };
+    unsafe {
+        GetSystemCpuSetInformation(std::ptr::null_mut(), 0, &mut bytes, GetCurrentProcess(), 0)
+    };
     let mut buffer = vec![0u64; (bytes as usize).div_ceil(8).max(1)];
     // SAFETY: as above; the buffer holds `bytes` bytes, aligned for the records.
-    let ok = unsafe { GetSystemCpuSetInformation(buffer.as_mut_ptr().cast(), bytes, &mut bytes, GetCurrentProcess(), 0) };
+    let ok = unsafe {
+        GetSystemCpuSetInformation(
+            buffer.as_mut_ptr().cast(),
+            bytes,
+            &mut bytes,
+            GetCurrentProcess(),
+            0,
+        )
+    };
     let mut sets = Vec::new();
     let mut at = 0usize;
     while ok != 0 && at + size_of::<SYSTEM_CPU_SET_INFORMATION>() <= bytes as usize {
         // SAFETY: a record inside the buffer; each says its own size.
-        let info = unsafe { &*(buffer.as_ptr().cast::<u8>().add(at).cast::<SYSTEM_CPU_SET_INFORMATION>()) };
+        let info = unsafe {
+            &*(buffer
+                .as_ptr()
+                .cast::<u8>()
+                .add(at)
+                .cast::<SYSTEM_CPU_SET_INFORMATION>())
+        };
         if info.Size == 0 {
             break;
         }
@@ -35,7 +53,11 @@ fn cpu_sets() -> Vec<(u32, u8)> {
 fn fast_of(sets: &[(u32, u8)]) -> Vec<u32> {
     let best = sets.iter().map(|c| c.1).max().unwrap_or(0);
     let fast: Vec<u32> = sets.iter().filter(|c| c.1 == best).map(|c| c.0).collect();
-    if fast.len() == sets.len() { Vec::new() } else { fast }
+    if fast.len() == sets.len() {
+        Vec::new()
+    } else {
+        fast
+    }
 }
 
 /// `SIXM_FAST_CORES`: 0: no thread asks; 1: the threads a frame waits for
@@ -45,7 +67,12 @@ fn fast_of(sets: &[(u32, u8)]) -> Vec<u32> {
 /// slow ones stood idle.
 fn stage() -> u32 {
     static STAGE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *STAGE.get_or_init(|| std::env::var("SIXM_FAST_CORES").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(2))
+    *STAGE.get_or_init(|| {
+        std::env::var("SIXM_FAST_CORES")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(2)
+    })
 }
 
 /// Asks the system to run the calling thread, which a frame waits for, on
@@ -84,11 +111,17 @@ fn ask(what: &str, from: u32) {
         return;
     }
     // SAFETY: our own thread and a list of the system's own set ids.
-    let ok = unsafe { SetThreadSelectedCpuSets(GetCurrentThread(), fast.as_ptr(), fast.len() as u32) };
+    let ok =
+        unsafe { SetThreadSelectedCpuSets(GetCurrentThread(), fast.as_ptr(), fast.len() as u32) };
     if ok == 0 {
         tracing::warn!(what, error = %std::io::Error::last_os_error(), "the thread could not be kept on the fast cores");
     } else {
-        tracing::info!(what, fast = fast.len(), of, "the thread is kept on the fast cores (SIXM_FAST_CORES=0: not)");
+        tracing::info!(
+            what,
+            fast = fast.len(),
+            of,
+            "the thread is kept on the fast cores (SIXM_FAST_CORES=0: not)"
+        );
     }
 }
 
@@ -102,6 +135,8 @@ mod tests {
         assert!(fast_of(&[(256, 0), (257, 0)]).is_empty());
         assert!(fast_of(&[]).is_empty());
         assert!(!cpu_sets().is_empty());
-        std::thread::spawn(|| keep_on_fast_cores("test")).join().unwrap();
+        std::thread::spawn(|| keep_on_fast_cores("test"))
+            .join()
+            .unwrap();
     }
 }

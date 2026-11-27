@@ -43,7 +43,11 @@ fn parse(text: &str) -> Vec<(f64, f64)> {
 
 fn asked() -> &'static [(f64, f64)] {
     static ASKED: OnceLock<Vec<(f64, f64)>> = OnceLock::new();
-    ASKED.get_or_init(|| std::env::var("SIXM_POP_WATCH").map(|v| parse(&v)).unwrap_or_default())
+    ASKED.get_or_init(|| {
+        std::env::var("SIXM_POP_WATCH")
+            .map(|v| parse(&v))
+            .unwrap_or_default()
+    })
 }
 
 /// Whether frames are watched now.
@@ -149,14 +153,20 @@ fn lone(before: &[[i16; 3]], now: &[[i16; 3]], after: &[[i16; 3]]) -> Vec<usize>
     {
         return Vec::new();
     }
-    (0..one.len()).filter(|&n| one[n] > CHANGED && two[n] > CHANGED && both[n] < CHANGED / 2.0).collect()
+    (0..one.len())
+        .filter(|&n| one[n] > CHANGED && two[n] > CHANGED && both[n] < CHANGED / 2.0)
+        .collect()
 }
 
 /// Frames on their way.
 static WAITING: AtomicU64 = AtomicU64::new(0);
 
 /// Records the read-back of `texture` (in the copy-source state).
-pub(crate) fn take(device: &ID3D12Device, list: &ID3D12GraphicsCommandList, texture: &ID3D12Resource) -> Option<Taken> {
+pub(crate) fn take(
+    device: &ID3D12Device,
+    list: &ID3D12GraphicsCommandList,
+    texture: &ID3D12Resource,
+) -> Option<Taken> {
     if !on() || WAITING.load(Relaxed) > 8 {
         return None;
     }
@@ -169,13 +179,17 @@ pub(crate) fn take(device: &ID3D12Device, list: &ID3D12GraphicsCommandList, text
         // SAFETY: a borrowed pointer the location never releases.
         pResource: unsafe { std::mem::transmute_copy(&taken.buffer) },
         Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { PlacedFootprint: taken.footprint },
+        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+            PlacedFootprint: taken.footprint,
+        },
     };
     let from = D3D12_TEXTURE_COPY_LOCATION {
         // SAFETY: as above.
         pResource: unsafe { std::mem::transmute_copy(texture) },
         Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+        Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+            SubresourceIndex: 0,
+        },
     };
     // SAFETY: an open list, live resources.
     unsafe { list.CopyTextureRegion(&to, 0, 0, 0, &from, None) };
@@ -188,7 +202,11 @@ pub(crate) fn sent(taken: Taken, flown: u64, frame: u64) {
     static THREAD: OnceLock<Option<mpsc::Sender<Job>>> = OnceLock::new();
     let Some(to) = THREAD.get_or_init(|| {
         let (to, from) = mpsc::channel::<Job>();
-        std::thread::Builder::new().name("pop watch".into()).spawn(move || watch(&from)).ok().map(|_| to)
+        std::thread::Builder::new()
+            .name("pop watch".into())
+            .spawn(move || watch(&from))
+            .ok()
+            .map(|_| to)
     }) else {
         return;
     };
@@ -242,7 +260,13 @@ fn differ(a: &[u8], b: &[u8]) -> Vec<f32> {
             total += ra
                 .chunks_exact(3)
                 .zip(rb.chunks_exact(3))
-                .map(|(p, q)| p.iter().zip(q).map(|(x, y)| u32::from(x.abs_diff(*y))).max().unwrap_or(0))
+                .map(|(p, q)| {
+                    p.iter()
+                        .zip(q)
+                        .map(|(x, y)| u32::from(x.abs_diff(*y)))
+                        .max()
+                        .unwrap_or(0)
+                })
                 .sum::<u32>();
         }
         *sum = total as f32 / (BLOCK * BLOCK) as f32;
@@ -254,13 +278,23 @@ fn differ(a: &[u8], b: &[u8]) -> Vec<f32> {
 /// before `before` had `quiet` changes): numbers of blocks. `None` for the
 /// steps if the picture moves.
 fn judge(before: &[u8], now: &[u8], after: &[u8], quiet: &[f32]) -> (usize, Option<usize>) {
-    let (one, two, across) = (differ(before, now), differ(now, after), differ(before, after));
+    let (one, two, across) = (
+        differ(before, now),
+        differ(now, after),
+        differ(before, after),
+    );
     let blips = (0..one.len())
-        .filter(|&n| one[n] > CHANGED && two[n] > CHANGED && across[n] < STAYED && across[n] * 3.0 < one[n])
+        .filter(|&n| {
+            one[n] > CHANGED && two[n] > CHANGED && across[n] < STAYED && across[n] * 3.0 < one[n]
+        })
         .count();
     let still = one.iter().filter(|&&d| d < 3.0).count() * 10 >= one.len() * 7;
     let steps = still.then(|| {
-        (0..one.len()).filter(|&n| one[n] > CHANGED && two[n] < STAYED && quiet.get(n).is_some_and(|&d| d < STAYED)).count()
+        (0..one.len())
+            .filter(|&n| {
+                one[n] > CHANGED && two[n] < STAYED && quiet.get(n).is_some_and(|&d| d < STAYED)
+            })
+            .count()
     });
     (blips, steps)
 }
@@ -321,7 +355,10 @@ fn watch(from: &mpsc::Receiver<Job>) {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         let f = job.taken.footprint.Footprint;
-        let (rgba, bgra) = (matches!(f.Format.0, 27..=29), matches!(f.Format.0, 87 | 90 | 91));
+        let (rgba, bgra) = (
+            matches!(f.Format.0, 27..=29),
+            matches!(f.Format.0, 87 | 90 | 91),
+        );
         let mut data = std::ptr::null_mut();
         // SAFETY: the copy has run; the mapping spans the footprint's rows.
         let rgb = unsafe {
@@ -329,21 +366,44 @@ fn watch(from: &mpsc::Receiver<Job>) {
                 WAITING.fetch_sub(1, Relaxed);
                 continue;
             }
-            let rows = std::slice::from_raw_parts(data.cast::<u8>(), f.RowPitch as usize * f.Height as usize);
-            let rgb = small(rows, f.Width as usize, f.Height as usize, f.RowPitch as usize, bgra);
+            let rows = std::slice::from_raw_parts(
+                data.cast::<u8>(),
+                f.RowPitch as usize * f.Height as usize,
+            );
+            let rgb = small(
+                rows,
+                f.Width as usize,
+                f.Height as usize,
+                f.RowPitch as usize,
+                bgra,
+            );
             job.taken.buffer.Unmap(0, None);
             rgb
         };
-        FREE.lock().unwrap_or_else(|e| e.into_inner()).push(job.taken);
+        FREE.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(job.taken);
         WAITING.fetch_sub(1, Relaxed);
         // Frames that follow each other only.
         if last.back().is_some_and(|p| p.frame + 1 != job.frame) {
             last.clear();
         }
-        let changed = last.back().map(|p| differ(&p.rgb, &rgb)).unwrap_or_default();
+        let changed = last
+            .back()
+            .map(|p| differ(&p.rgb, &rgb))
+            .unwrap_or_default();
         let (frame, ms, causes, phase) = (job.frame, job.ms, job.causes, job.phase);
         let half = half(&rgb);
-        last.push_back(Picture { frame, ms, causes, phase, rgb, half, changed, saved: false });
+        last.push_back(Picture {
+            frame,
+            ms,
+            causes,
+            phase,
+            rgb,
+            half,
+            changed,
+            saved: false,
+        });
         if all && let Some(p) = last.back_mut() {
             save(p);
         }
@@ -362,7 +422,12 @@ fn watch(from: &mpsc::Receiver<Job>) {
             side.lone += lone.len() as u64;
             side.lone_frames += u64::from(!lone.is_empty());
             if blips > 0 || lone.len() > 1 || steps.is_some_and(|s| s > 0) {
-                let since: Vec<u64> = now.causes.iter().zip(&first.causes).map(|(a, b)| a.saturating_sub(*b)).collect();
+                let since: Vec<u64> = now
+                    .causes
+                    .iter()
+                    .zip(&first.causes)
+                    .map(|(a, b)| a.saturating_sub(*b))
+                    .collect();
                 tracing::info!(
                     "pop watch: frame {} at {:.2} s: {blips} blips, {steps:?} steps, lone blocks {lone:?}; in the two frames before it [made null for another texture, kept, neutral, stale] {since:?}",
                     now.frame,
@@ -437,7 +502,10 @@ mod tests {
         let (a, mut b, c) = (at(0), at(8), at(16));
         assert!(lone(&half(&a), &half(&b), &half(&c)).is_empty());
         patch(&mut b, 20, 10, 128);
-        assert_eq!(lone(&half(&a), &half(&b), &half(&c)), vec![10 * (WIDE / BLOCK) + 20]);
+        assert_eq!(
+            lone(&half(&a), &half(&b), &half(&c)),
+            vec![10 * (WIDE / BLOCK) + 20]
+        );
     }
 
     #[test]

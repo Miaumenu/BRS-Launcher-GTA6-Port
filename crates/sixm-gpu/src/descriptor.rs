@@ -180,7 +180,9 @@ fn sync_on() -> bool {
 #[cfg(windows)]
 fn sync_aside() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| sync_on() && std::env::var_os("SIXM_HEAP_SYNC_ASIDE").is_none_or(|v| v != "0"))
+    *ON.get_or_init(|| {
+        sync_on() && std::env::var_os("SIXM_HEAP_SYNC_ASIDE").is_none_or(|v| v != "0")
+    })
 }
 
 /// How long that thread waits for a submission before it makes a round of its
@@ -192,14 +194,18 @@ fn sync_aside() -> bool {
 fn sync_early() -> Option<std::time::Duration> {
     static EVERY: std::sync::OnceLock<Option<std::time::Duration>> = std::sync::OnceLock::new();
     *EVERY.get_or_init(|| {
-        let ms = std::env::var("SIXM_HEAP_SYNC_EARLY").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(4u64);
+        let ms = std::env::var("SIXM_HEAP_SYNC_EARLY")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(4u64);
         (ms > 0).then(|| std::time::Duration::from_millis(ms))
     })
 }
 
 /// The thread's work: rounds asked for, rounds done.
 #[cfg(windows)]
-static SYNC_ROUNDS: (std::sync::Mutex<(u64, u64)>, std::sync::Condvar) = (std::sync::Mutex::new((0, 0)), std::sync::Condvar::new());
+static SYNC_ROUNDS: (std::sync::Mutex<(u64, u64)>, std::sync::Condvar) =
+    (std::sync::Mutex::new((0, 0)), std::sync::Condvar::new());
 
 /// [`sync_heaps`], begun; done when it is dropped (with [`sync_aside`]), or
 /// when this returns.
@@ -215,45 +221,54 @@ pub(crate) fn begin_sync_heaps() -> SyncedHeaps {
     static STARTED: std::sync::Once = std::sync::Once::new();
     static THREAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     STARTED.call_once(|| {
-        let made = std::thread::Builder::new().name("sixm-heap-sync".into()).spawn(|| {
-            crate::cores::keep_on_fast_cores("sixm-heap-sync");
-            let rounds = || SYNC_ROUNDS.0.lock().unwrap_or_else(|e| e.into_inner());
-            /// A round is over, however it ends.
-            struct Over;
-            impl Drop for Over {
-                fn drop(&mut self) {
-                    SYNC_ROUNDS.0.lock().unwrap_or_else(|e| e.into_inner()).1 += 1;
-                    SYNC_ROUNDS.1.notify_all();
-                }
-            }
-            // Between the rounds asked for, while submissions come.
-            let mut last = std::time::Instant::now();
-            loop {
-                let mut r = rounds();
-                let mut asked = r.0 != r.1;
-                while !asked {
-                    let Some(every) = sync_early().filter(|_| last.elapsed().as_millis() < 500) else {
-                        r = SYNC_ROUNDS.1.wait(r).unwrap_or_else(|e| e.into_inner());
-                        asked = r.0 != r.1;
-                        continue;
-                    };
-                    let (back, over) = SYNC_ROUNDS.1.wait_timeout(r, every).unwrap_or_else(|e| e.into_inner());
-                    r = back;
-                    asked = r.0 != r.1;
-                    if over.timed_out() {
-                        break;
+        let made = std::thread::Builder::new()
+            .name("sixm-heap-sync".into())
+            .spawn(|| {
+                crate::cores::keep_on_fast_cores("sixm-heap-sync");
+                let rounds = || SYNC_ROUNDS.0.lock().unwrap_or_else(|e| e.into_inner());
+                /// A round is over, however it ends.
+                struct Over;
+                impl Drop for Over {
+                    fn drop(&mut self) {
+                        SYNC_ROUNDS.0.lock().unwrap_or_else(|e| e.into_inner()).1 += 1;
+                        SYNC_ROUNDS.1.notify_all();
                     }
                 }
-                drop(r);
-                let _over = asked.then(|| {
-                    last = std::time::Instant::now();
-                    Over
-                });
-                let _round =
-                    crate::timeline::span(if asked { "the heaps' records, for a submission" } else { "the heaps' records, early" });
-                let _ = std::panic::catch_unwind(sync_heaps);
-            }
-        });
+                // Between the rounds asked for, while submissions come.
+                let mut last = std::time::Instant::now();
+                loop {
+                    let mut r = rounds();
+                    let mut asked = r.0 != r.1;
+                    while !asked {
+                        let Some(every) = sync_early().filter(|_| last.elapsed().as_millis() < 500)
+                        else {
+                            r = SYNC_ROUNDS.1.wait(r).unwrap_or_else(|e| e.into_inner());
+                            asked = r.0 != r.1;
+                            continue;
+                        };
+                        let (back, over) = SYNC_ROUNDS
+                            .1
+                            .wait_timeout(r, every)
+                            .unwrap_or_else(|e| e.into_inner());
+                        r = back;
+                        asked = r.0 != r.1;
+                        if over.timed_out() {
+                            break;
+                        }
+                    }
+                    drop(r);
+                    let _over = asked.then(|| {
+                        last = std::time::Instant::now();
+                        Over
+                    });
+                    let _round = crate::timeline::span(if asked {
+                        "the heaps' records, for a submission"
+                    } else {
+                        "the heaps' records, early"
+                    });
+                    let _ = std::panic::catch_unwind(sync_heaps);
+                }
+            });
         THREAD.store(made.is_ok(), std::sync::atomic::Ordering::Release);
     });
     if !THREAD.load(std::sync::atomic::Ordering::Acquire) {
@@ -277,10 +292,16 @@ impl Drop for SyncedHeaps {
         let began = std::time::Instant::now();
         let mut rounds = SYNC_ROUNDS.0.lock().unwrap_or_else(|e| e.into_inner());
         while rounds.1 < mine {
-            rounds = SYNC_ROUNDS.1.wait(rounds).unwrap_or_else(|e| e.into_inner());
+            rounds = SYNC_ROUNDS
+                .1
+                .wait(rounds)
+                .unwrap_or_else(|e| e.into_inner());
         }
         drop(rounds);
-        SYNCED[6].fetch_add(began.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        SYNCED[6].fetch_add(
+            began.elapsed().as_micros() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 }
 
@@ -300,7 +321,8 @@ pub(crate) fn sync_heaps() {
         return;
     }
     let started = std::time::Instant::now();
-    let (mut pages, mut looked, mut mirrored, mut tabled, mut later) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    let (mut pages, mut looked, mut mirrored, mut tabled, mut later) =
+        (0u64, 0u64, 0u64, 0u64, 0u64);
     let (mut views, mut bytes) = (0u64, 0u64);
     let mut spent = [0u64; 3];
     let since = |at: std::time::Instant| at.elapsed().as_nanos() as u64;
@@ -346,7 +368,10 @@ pub(crate) fn sync_heaps() {
         for (range_from, range_end) in taken {
             let mut page = range_from & !(crate::watch::PAGE - 1);
             while page < range_end {
-                parts.push((page.max(range_from), (page + crate::watch::PAGE).min(range_end)));
+                parts.push((
+                    page.max(range_from),
+                    (page + crate::watch::PAGE).min(range_end),
+                ));
                 page += crate::watch::PAGE;
             }
         }
@@ -356,7 +381,10 @@ pub(crate) fn sync_heaps() {
         let began = std::time::Instant::now();
         let copied = host.copied_begin(step as usize);
         let samplers = heap.samplers();
-        let found: Vec<std::sync::Mutex<SyncPart>> = parts.chunks(SYNC_PAGES).map(|_| Default::default()).collect();
+        let found: Vec<std::sync::Mutex<SyncPart>> = parts
+            .chunks(SYNC_PAGES)
+            .map(|_| Default::default())
+            .collect();
         crate::land::each_view(true, found.len(), &|n| {
             let mut out = SyncPart::default();
             let mut page_bytes: Vec<u8> = Vec::new();
@@ -375,7 +403,9 @@ pub(crate) fn sync_heaps() {
                 let slots = changed_slots(from, to, start as usize, step, mirrored_count);
                 // A record that straddles the range's ends is left
                 // to the range that holds its first byte.
-                let first = ((from - start as usize) as u64).div_ceil(step).max(slots.start);
+                let first = ((from - start as usize) as u64)
+                    .div_ceil(step)
+                    .max(slots.start);
                 let Some(records) = page_bytes.get((start + first * step) as usize - from..) else {
                     continue;
                 };
@@ -386,7 +416,13 @@ pub(crate) fn sync_heaps() {
                 changed.clear();
                 // SAFETY: the parts are ranges of the heap apart from one
                 // another, and only records that lie whole in one are its.
-                unsafe { copied.changes(first as u32, &records[..(count * step) as usize], &mut changed) };
+                unsafe {
+                    copied.changes(
+                        first as u32,
+                        &records[..(count * step) as usize],
+                        &mut changed,
+                    )
+                };
                 for &index in &changed {
                     let at = (u64::from(index) - first) as usize * step as usize;
                     let word = |n: usize| {
@@ -406,7 +442,8 @@ pub(crate) fn sync_heaps() {
                         // slot from this anyway, they wait for a draw
                         // or a pass: noted some frames on, unless a
                         // draw's table turns out to hold them.
-                        if matches!(word(2) >> KIND_SHIFT, CONSTANT | PLACED) && host.copied_waits() {
+                        if matches!(word(2) >> KIND_SHIFT, CONSTANT | PLACED) && host.copied_waits()
+                        {
                             out.wait.push(index);
                             continue;
                         }
@@ -463,11 +500,17 @@ pub(crate) fn sync_heaps() {
     }
     drop(heaps);
     let micros = started.elapsed().as_micros() as u64;
-    for (count, n) in SYNCED.iter().zip([pages, looked, mirrored, micros, tabled, later]) {
+    for (count, n) in SYNCED
+        .iter()
+        .zip([pages, looked, mirrored, micros, tabled, later])
+    {
         count.fetch_add(n, Relaxed);
     }
     let [taking, reading, making] = spent;
-    for (count, n) in SYNC_SPLIT.iter().zip([views, bytes, taking, reading, making]) {
+    for (count, n) in SYNC_SPLIT
+        .iter()
+        .zip([views, bytes, taking, reading, making])
+    {
         count.fetch_add(n, Relaxed);
     }
     for (count, n) in SYNCED_KINDS.iter().zip(kinds) {
@@ -478,7 +521,8 @@ pub(crate) fn sync_heaps() {
 /// Of those mirrored, since the last frame line: no view, a view of an object,
 /// another, a sampler; waited and no draw came.
 #[cfg(windows)]
-static SYNCED_KINDS: [std::sync::atomic::AtomicU64; 5] = [const { std::sync::atomic::AtomicU64::new(0) }; 5];
+static SYNCED_KINDS: [std::sync::atomic::AtomicU64; 5] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 5];
 
 /// What a thread found on its pages of a heap, for [`sync_heaps`].
 #[cfg(windows)]
@@ -510,19 +554,22 @@ const SYNC_AT_A_TIME: usize = 256;
 /// records that waited for one ([`host::HostHeap::copied_wait`]); and the
 /// microseconds submissions waited for it ([`sync_aside`]).
 #[cfg(windows)]
-pub(crate) static SYNCED: [std::sync::atomic::AtomicU64; 7] = [const { std::sync::atomic::AtomicU64::new(0) }; 7];
+pub(crate) static SYNCED: [std::sync::atomic::AtomicU64; 7] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 7];
 
 /// The same, of [`SYNCED`]'s pages: those in view memory that was guarded;
 /// bytes read; nanoseconds asking what was written, reading it and comparing
 /// it with what was last seen, making views.
 #[cfg(windows)]
-static SYNC_SPLIT: [std::sync::atomic::AtomicU64; 5] = [const { std::sync::atomic::AtomicU64::new(0) }; 5];
+static SYNC_SPLIT: [std::sync::atomic::AtomicU64; 5] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 5];
 
 /// With the frame line: what [`sync_heaps`] did per frame over `frames`.
 /// Nothing while no heap page changed.
 #[cfg(windows)]
 pub(crate) fn sync_line(frames: f64) {
-    let [twins, moved, lost] = [0, 1, 2].map(|i| host::TWINS[i].swap(0, std::sync::atomic::Ordering::Relaxed));
+    let [twins, moved, lost] =
+        [0, 1, 2].map(|i| host::TWINS[i].swap(0, std::sync::atomic::Ordering::Relaxed));
     if twins > 0 {
         tracing::info!(
             "raw twins of buffer views made per frame (SIXM_RAW_VIEWS=0: none): {:.0}, of them {:.1} that do not begin on 16 bytes ({:.1} null)",
@@ -531,9 +578,12 @@ pub(crate) fn sync_line(frames: f64) {
             lost as f64 / frames
         );
     }
-    let [pages, looked, mirrored, micros, tabled, later, waited] = [0, 1, 2, 3, 4, 5, 6].map(|i| SYNCED[i].swap(0, std::sync::atomic::Ordering::Relaxed));
-    let split = [0, 1, 2, 3, 4].map(|i| SYNC_SPLIT[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64);
-    let kinds = [0, 1, 2, 3, 4].map(|i| SYNCED_KINDS[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / frames);
+    let [pages, looked, mirrored, micros, tabled, later, waited] =
+        [0, 1, 2, 3, 4, 5, 6].map(|i| SYNCED[i].swap(0, std::sync::atomic::Ordering::Relaxed));
+    let split =
+        [0, 1, 2, 3, 4].map(|i| SYNC_SPLIT[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64);
+    let kinds = [0, 1, 2, 3, 4]
+        .map(|i| SYNCED_KINDS[i].swap(0, std::sync::atomic::Ordering::Relaxed) as f64 / frames);
     if pages == 0 {
         return;
     }
@@ -607,7 +657,10 @@ pub(crate) fn lent_heap() -> Option<usize> {
 pub(crate) fn with_heap<T>(heap: usize, f: impl FnOnce(&Heap) -> T) -> Option<T> {
     let heaps = SHADER_HEAPS.read().unwrap_or_else(|e| e.into_inner());
     // SAFETY: registered heaps are live (removed when dropped).
-    heaps.iter().any(|&(_, _, h)| h == heap).then(|| f(unsafe { &*(heap as *const Heap) }))
+    heaps
+        .iter()
+        .any(|&(_, _, h)| h == heap)
+        .then(|| f(unsafe { &*(heap as *const Heap) }))
 }
 
 /// Gives back dynamic slots of the host heap behind the title heap at
@@ -899,7 +952,8 @@ fn inline() -> bool {
 
 /// Views named whole in their records since the start: constant buffer
 /// views, views of placed memory (for the memory line).
-static NAMED_WHOLE: [std::sync::atomic::AtomicU64; 2] = [const { std::sync::atomic::AtomicU64::new(0) }; 2];
+static NAMED_WHOLE: [std::sync::atomic::AtomicU64; 2] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 2];
 
 /// The two record words of the 62 bits `payload` of kind `kind`.
 fn kind_words(kind: u32, payload: u64) -> [u32; 2] {
@@ -927,14 +981,21 @@ fn constant_words(address: u64, size: u32) -> Option<[u32; 2]> {
     } else {
         return None;
     };
-    Some(kind_words(CONSTANT, code << CONSTANT_ADDRESS_BITS | address))
+    Some(kind_words(
+        CONSTANT,
+        code << CONSTANT_ADDRESS_BITS | address,
+    ))
 }
 
 /// The constant buffer view [`constant_words`] named.
 fn constant_of(i: u32, generation: u32) -> View {
     let payload = payload(i, generation);
     let code = (payload >> CONSTANT_ADDRESS_BITS) as u32;
-    let size = if code >> 14 == 0 { code } else { (code & 0x3fff) << 8 };
+    let size = if code >> 14 == 0 {
+        code
+    } else {
+        (code & 0x3fff) << 8
+    };
     View::Constant(payload & ((1 << CONSTANT_ADDRESS_BITS) - 1), size)
 }
 
@@ -975,7 +1036,8 @@ impl Views {
     fn placed_of(&self, i: u32, generation: u32) -> Option<View> {
         let payload = payload(i, generation);
         let address = payload & ((1 << PLACED_ADDRESS_BITS) - 1);
-        let &(unordered, resource, rest) = self.shapes.get((payload >> PLACED_ADDRESS_BITS) as usize)?;
+        let &(unordered, resource, rest) =
+            self.shapes.get((payload >> PLACED_ADDRESS_BITS) as usize)?;
         let mut desc = [0u32; 16];
         desc[..10].copy_from_slice(&rest[..10]);
         (desc[10], desc[11]) = (address as u32, (address >> 32) as u32);
@@ -1190,7 +1252,10 @@ pub(crate) fn make_waiting() {
             // there.)
             // (The heap stays while the lock is held: `mirror`.)
             let heaps = SHADER_HEAPS.read().unwrap_or_else(|e| e.into_inner());
-            let Some(&(_, _, at)) = heaps.iter().find(|&&(start, end, _)| (start..end).contains(&handle)) else {
+            let Some(&(_, _, at)) = heaps
+                .iter()
+                .find(|&&(start, end, _)| (start..end).contains(&handle))
+            else {
                 continue;
             };
             // SAFETY: a registered heap, live while the lock is held.
@@ -1706,15 +1771,44 @@ mod tests {
     #[test]
     fn constant_views_fit_their_records() {
         let top = (1u64 << CONSTANT_ADDRESS_BITS) - 1;
-        for address in [0u64, 0x100, 0x2602_0000, 0xd_6b60_0000, 0x7ffd_a34f_0000, top] {
-            for size in [0u32, 1, 255, 256, 4000, (1 << 14) - 1, 1 << 14, 65536, (1 << 22) - 256] {
+        for address in [
+            0u64,
+            0x100,
+            0x2602_0000,
+            0xd_6b60_0000,
+            0x7ffd_a34f_0000,
+            top,
+        ] {
+            for size in [
+                0u32,
+                1,
+                255,
+                256,
+                4000,
+                (1 << 14) - 1,
+                1 << 14,
+                65536,
+                (1 << 22) - 256,
+            ] {
                 let [i, generation] = constant_words(address, size).expect("fits");
                 assert_eq!(generation >> KIND_SHIFT, CONSTANT);
-                assert_eq!(view_at(i, generation), Some(View::Constant(address, size)), "{address:#x} {size}");
+                assert_eq!(
+                    view_at(i, generation),
+                    Some(View::Constant(address, size)),
+                    "{address:#x} {size}"
+                );
             }
         }
-        assert_eq!(constant_words(top + 1, 256), None, "an address past 47 bits");
-        assert_eq!(constant_words(0x1000, (1 << 14) + 1), None, "16 KiB or more, no multiple of 256");
+        assert_eq!(
+            constant_words(top + 1, 256),
+            None,
+            "an address past 47 bits"
+        );
+        assert_eq!(
+            constant_words(0x1000, (1 << 14) + 1),
+            None,
+            "16 KiB or more, no multiple of 256"
+        );
         assert_eq!(constant_words(0x1000, 1 << 22), None, "4 MiB");
         // Different views never share their words.
         assert_ne!(constant_words(0x1000, 256), constant_words(0x1000, 512));
@@ -1741,8 +1835,24 @@ mod tests {
             View::Placed(_, r, _) => *r == resource,
             _ => false,
         };
-        let entries = || VIEWS.read().unwrap().list.iter().filter(|(v, _)| mine(v)).count();
-        let shapes = || VIEWS.read().unwrap().shapes.iter().filter(|s| s.1 == resource).count();
+        let entries = || {
+            VIEWS
+                .read()
+                .unwrap()
+                .list
+                .iter()
+                .filter(|(v, _)| mine(v))
+                .count()
+        };
+        let shapes = || {
+            VIEWS
+                .read()
+                .unwrap()
+                .shapes
+                .iter()
+                .filter(|s| s.1 == resource)
+                .count()
+        };
         for n in 0..20_000u64 {
             let address = 0x6_0000_0000 + n * 0x100;
             create_cbv(null, &[address as u32, (address >> 32) as u32, 512, 0], at);

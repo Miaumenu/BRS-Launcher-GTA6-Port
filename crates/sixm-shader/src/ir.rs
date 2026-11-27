@@ -182,7 +182,11 @@ pub fn build(code: &[u8], wave64: bool, vgprs: u16) -> Result<Program, ShaderErr
         // A move to or from a scalar parked in a VGPR lane (`unspill`): its register
         // codes may be ones the machine word cannot hold.
         if let Ok(k) = parked.binary_search_by_key(&n, |m| m.0)
-            && let Fields::Sop { dst: Some(Operand::Scalar { code: to, .. }), src, .. } = &mut fields
+            && let Fields::Sop {
+                dst: Some(Operand::Scalar { code: to, .. }),
+                src,
+                ..
+            } = &mut fields
             && let Some(Operand::Scalar { code: from, .. }) = src.first_mut()
         {
             (*to, *from) = (parked[k].1, parked[k].2);
@@ -277,7 +281,14 @@ fn unspill(
     /// `v_writelane_b32 vN, sX, K` / `v_readlane_b32 sX, vN, K`: (save, N, X, K).
     fn parked(inst: &gfx10::Instruction, fields: &Fields) -> Option<(bool, u8, u8, u32)> {
         let Fields::Valu(v) = fields else { return None };
-        if v.abs != 0 || v.neg != 0 || v.opsel != 0 || v.clamp || v.omod != 0 || v.sdwa.is_some() || v.dpp.is_some() {
+        if v.abs != 0
+            || v.neg != 0
+            || v.opsel != 0
+            || v.clamp
+            || v.omod != 0
+            || v.sdwa.is_some()
+            || v.dpp.is_some()
+        {
             return None;
         }
         let lane = |op: &Operand| match *op {
@@ -285,10 +296,14 @@ fn unspill(
             _ => None,
         };
         match (inst.name()?, v.dst?, v.src.as_slice()) {
-            ("v_writelane_b32", Operand::Vector { reg, .. }, [Operand::Scalar { code, .. }, k]) if *code < 105 => {
+            ("v_writelane_b32", Operand::Vector { reg, .. }, [Operand::Scalar { code, .. }, k])
+                if *code < 105 =>
+            {
                 Some((true, reg, *code, lane(k)?))
             }
-            ("v_readlane_b32", Operand::Scalar { code, .. }, [Operand::Vector { reg, .. }, k]) if code < 105 => {
+            ("v_readlane_b32", Operand::Scalar { code, .. }, [Operand::Vector { reg, .. }, k])
+                if code < 105 =>
+            {
                 Some((false, *reg, code, lane(k)?))
             }
             _ => None,
@@ -303,7 +318,9 @@ fn unspill(
     let mut written: Vec<Vec<u8>> = Vec::with_capacity(list.len());
     let mut read: Vec<Vec<u8>> = Vec::with_capacity(list.len());
     for inst in list.iter() {
-        let Some(name) = inst.name() else { return Vec::new() };
+        let Some(name) = inst.name() else {
+            return Vec::new();
+        };
         let fields = inst.fields(wave64);
         let park = parked(inst, &fields);
         let Ok(effects) = effects(inst, &fields, name, lanes, vgprs) else {
@@ -354,14 +371,21 @@ fn unspill(
             let mut saved = Vec::new();
             last < first
                 && !(first + 1..=end).any(leader)
-                && parks[first..=end].iter().filter_map(of).all(|(save, _, _, lane)| {
-                    if save {
-                        saved.push(lane);
-                    }
-                    saved.contains(&lane)
-                })
+                && parks[first..=end]
+                    .iter()
+                    .filter_map(of)
+                    .all(|(save, _, _, lane)| {
+                        if save {
+                            saved.push(lane);
+                        }
+                        saved.contains(&lane)
+                    })
         });
-        let from = if late { first.unwrap_or(0) } else { parks.len() };
+        let from = if late {
+            first.unwrap_or(0)
+        } else {
+            parks.len()
+        };
         for park in &mut parks[..from] {
             if of(park).is_some() {
                 *park = None;
@@ -516,7 +540,10 @@ fn unspill(
         }
         // Lives of one lane that move alike share a code, as they share the lane.
         let role = |n: usize| {
-            let (lower, upper) = (pairs.iter().any(|p| p.0 == n), pairs.iter().any(|p| p.1 == n));
+            let (lower, upper) = (
+                pairs.iter().any(|p| p.0 == n),
+                pairs.iter().any(|p| p.1 == n),
+            );
             (stores[n], u8::from(lower) + 2 * u8::from(upper))
         };
         let mut shared: Vec<_> = (0..stores.len()).map(role).collect();
@@ -524,7 +551,9 @@ fn unspill(
             let all = shared.clone();
             shared.sort_unstable();
             shared.dedup();
-            all.iter().filter_map(|r| shared.binary_search(r).ok()).collect()
+            all.iter()
+                .filter_map(|r| shared.binary_search(r).ok())
+                .collect()
         };
         for o in of.iter_mut().filter(|o| **o != usize::MAX) {
             *o = place[*o];
@@ -547,7 +576,10 @@ fn unspill(
         free[past..255].fill(true);
         let mut codes: Vec<Option<u8>> = vec![None; shared.len()];
         for &(lower, upper) in &pairs {
-            let at = (108..123).chain((0..104).rev()).chain(past..254).find(|&c| free[c] && free[c + 1]);
+            let at = (108..123)
+                .chain((0..104).rev())
+                .chain(past..254)
+                .find(|&c| free[c] && free[c + 1]);
             // Not enough spare codes: leave the program as it is.
             let c = at?;
             (free[c], free[c + 1]) = (false, false);
@@ -555,18 +587,25 @@ fn unspill(
             codes[upper] = Some(c as u8 + 1);
         }
         for code in codes.iter_mut().filter(|c| c.is_none()) {
-            let c = (108..=123).chain((0..105).rev()).chain(past..255).find(|&c| free[c])?;
+            let c = (108..=123)
+                .chain((0..105).rev())
+                .chain(past..255)
+                .find(|&c| free[c])?;
             free[c] = false;
             *code = Some(c as u8);
         }
         Some((of, pairs, codes.into_iter().flatten().collect()))
     };
-    let Some(mut chosen) = plan(false) else { return Vec::new() };
+    let Some(mut chosen) = plan(false) else {
+        return Vec::new();
+    };
     let lonely = |(of, pairs, _): &(Vec<usize>, Vec<(usize, usize)>, Vec<u8>)| {
         (0..list.len()).any(|i| {
             parks[i].is_some_and(|p| p.0)
                 && partner(i).is_some()
-                && !pairs.iter().any(|&(lower, upper)| of[i] == lower || of[i] == upper)
+                && !pairs
+                    .iter()
+                    .any(|&(lower, upper)| of[i] == lower || of[i] == upper)
         })
     };
     if wave64
@@ -583,7 +622,9 @@ fn unspill(
     // `s_mov_b32` / `s_mov_b64 dst, src` (SOP1, opcodes 3 and 4); `s_nop`. A code
     // from `PARKED` up does not fit the word: s0 stands in for it there.
     let field = |code: u8| if code < PARKED { u32::from(code) } else { 0 };
-    let mov = |wide: bool, dst: u8, src: u8| 0xBE80_0000 | field(dst) << 16 | (3 + u32::from(wide)) << 8 | field(src);
+    let mov = |wide: bool, dst: u8, src: u8| {
+        0xBE80_0000 | field(dst) << 16 | (3 + u32::from(wide)) << 8 | field(src)
+    };
     const NOP: u32 = 0xBF80_0000;
     let mut edits: Vec<(usize, Option<(bool, u8, u8)>)> = Vec::new();
     for i in 0..list.len() {
@@ -592,7 +633,9 @@ fn unspill(
         };
         let slot = codes[store[i]];
         if pairs.iter().any(|p| p.0 == store[i]) {
-            let Some(j) = partner(i) else { return Vec::new() };
+            let Some(j) = partner(i) else {
+                return Vec::new();
+            };
             // A save moves the pair where its second half is saved; a
             // restore where its first half is restored.
             let (at, gone) = if save { (j, i) } else { (i, j) };
@@ -610,7 +653,13 @@ fn unspill(
     for (i, edit) in edits {
         match edit {
             Some((wide, dst, src)) => {
-                put(list, i, gfx10::Encoding::Sop1, 3 + u16::from(wide), mov(wide, dst, src));
+                put(
+                    list,
+                    i,
+                    gfx10::Encoding::Sop1,
+                    3 + u16::from(wide),
+                    mov(wide, dst, src),
+                );
                 moves.push((i, dst, src));
             }
             None => put(list, i, gfx10::Encoding::Sopp, 0, NOP),
@@ -733,7 +782,10 @@ pub(crate) fn thread_edges(
 pub(crate) fn without_early_outs(p: &Program) -> Option<Program> {
     let ends = |b: usize| {
         p.blocks[b].exit == Exit::End
-            && p.blocks[b].insts.iter().all(|i| matches!(i.fields, crate::gfx10::Fields::Sopp { .. }))
+            && p.blocks[b]
+                .insts
+                .iter()
+                .all(|i| matches!(i.fields, crate::gfx10::Fields::Sopp { .. }))
     };
     let mut blocks = p.blocks.clone();
     let mut any = false;
@@ -741,7 +793,12 @@ pub(crate) fn without_early_outs(p: &Program) -> Option<Program> {
         let Exit::Branch { taken, not_taken } = block.exit else {
             continue;
         };
-        if ends(taken) && block.insts.last().is_some_and(|i| i.name() == "s_cbranch_execz") {
+        if ends(taken)
+            && block
+                .insts
+                .last()
+                .is_some_and(|i| i.name() == "s_cbranch_execz")
+        {
             block.insts.pop();
             block.exit = Exit::Jump(not_taken);
             any = true;
@@ -781,7 +838,10 @@ pub(crate) fn without_skips(p: &Program, deep: bool) -> Option<Program> {
     let n = p.blocks.len();
     let ends = |b: usize| {
         p.blocks[b].exit == Exit::End
-            && p.blocks[b].insts.iter().all(|i| matches!(i.fields, crate::gfx10::Fields::Sopp { .. }))
+            && p.blocks[b]
+                .insts
+                .iter()
+                .all(|i| matches!(i.fields, crate::gfx10::Fields::Sopp { .. }))
     };
     // Scalars moved from register to register (a scalar the compiler parked in a VGPR lane
     // comes back by such a move, `unspill`) are the value they copy.
@@ -805,7 +865,11 @@ pub(crate) fn without_skips(p: &Program, deep: bool) -> Option<Program> {
         for inst in &block.insts {
             if matches!(inst.name(), "s_mov_b32" | "s_mov_b64")
                 && inst.reads.len() == inst.writes.len()
-                && inst.reads.iter().chain(&inst.writes).all(|r| matches!(r.0, Reg::S(_)))
+                && inst
+                    .reads
+                    .iter()
+                    .chain(&inst.writes)
+                    .all(|r| matches!(r.0, Reg::S(_)))
             {
                 copy.extend(inst.writes.iter().zip(&inst.reads).map(|(w, r)| (w.1, r.1)));
             }
@@ -872,9 +936,19 @@ pub(crate) fn without_skips(p: &Program, deep: bool) -> Option<Program> {
             if !scalar || deep && !live.contains(&phi.value) {
                 continue;
             }
-            let before: Vec<Value> =
-                join.preds.iter().zip(&phi.args).filter(|(q, _)| **q == b).map(|(_, a)| root(*a)).collect();
-            let within = join.preds.iter().zip(&phi.args).filter(|(q, _)| inside[**q]).map(|(_, a)| root(*a));
+            let before: Vec<Value> = join
+                .preds
+                .iter()
+                .zip(&phi.args)
+                .filter(|(q, _)| **q == b)
+                .map(|(_, a)| root(*a))
+                .collect();
+            let within = join
+                .preds
+                .iter()
+                .zip(&phi.args)
+                .filter(|(q, _)| inside[**q])
+                .map(|(_, a)| root(*a));
             if within.into_iter().any(|a| !before.contains(&a)) {
                 return None;
             }
@@ -893,7 +967,11 @@ pub(crate) fn without_skips(p: &Program, deep: bool) -> Option<Program> {
         let Exit::Branch { taken, not_taken } = p.blocks[b].exit else {
             continue;
         };
-        if !p.blocks[b].insts.last().is_some_and(|i| i.name() == "s_cbranch_execz") {
+        if !p.blocks[b]
+            .insts
+            .last()
+            .is_some_and(|i| i.name() == "s_cbranch_execz")
+        {
             continue;
         }
         if ends(taken) || skipped(b, taken, not_taken).is_some() {
@@ -1733,7 +1811,11 @@ mod tests {
     fn skips(p: &Program) -> usize {
         p.blocks
             .iter()
-            .filter(|b| b.insts.last().is_some_and(|i| i.name() == "s_cbranch_execz"))
+            .filter(|b| {
+                b.insts
+                    .last()
+                    .is_some_and(|i| i.name() == "s_cbranch_execz")
+            })
             .count()
     }
 

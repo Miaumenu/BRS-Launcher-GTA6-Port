@@ -109,7 +109,10 @@ const fn glyph(c: u8) -> [u8; 7] {
 
 /// The box's size in pixels, a dot being `scale` of them each way.
 const fn size(scale: u32) -> (u32, u32) {
-    ((COLUMNS * CELL.0 + 2 * RIM) * scale, (LINES * CELL.1 + 2 * RIM) * scale)
+    (
+        (COLUMNS * CELL.0 + 2 * RIM) * scale,
+        (LINES * CELL.1 + 2 * RIM) * scale,
+    )
 }
 
 /// Pixels to a dot for a picture that high: a 720-line screenshot of it
@@ -126,7 +129,10 @@ fn lit(lines: &[String], x: u32, y: u32) -> bool {
     if x % CELL.0 >= GLYPH.0 || y % CELL.1 >= GLYPH.1 || x / CELL.0 >= COLUMNS {
         return false;
     }
-    let Some(&c) = lines.get((y / CELL.1) as usize).and_then(|l| l.as_bytes().get((x / CELL.0) as usize)) else {
+    let Some(&c) = lines
+        .get((y / CELL.1) as usize)
+        .and_then(|l| l.as_bytes().get((x / CELL.0) as usize))
+    else {
         return false;
     };
     (glyph(c.to_ascii_uppercase())[(y % CELL.1) as usize] >> (GLYPH.0 - 1 - x % CELL.0)) & 1 != 0
@@ -213,14 +219,39 @@ fn text(c: &[f64; COUNTERS], ms: f64, worst: f64, cost: f64, host: &Host) -> Vec
     let [budget, used, _, shared] = host.video_memory().unwrap_or_default();
     let idle = (c[1] / 1e3).min(ms);
     vec![
-        format!("FPS {:.1}  FRAME {ms:.1} MS  LONGEST {worst:.0}", 1e3 / ms.max(0.001)),
+        format!(
+            "FPS {:.1}  FRAME {ms:.1} MS  LONGEST {worst:.0}",
+            1e3 / ms.max(0.001)
+        ),
         format!("DRAWS {:.0}  DROPPED {:.0}", c[10], c[8]),
-        format!("SUBMIT BUSY {:.1}  WAITS FOR GPU {:.1}", c[0] / 1e3, c[3] / 1e3),
-        format!("GPU BUSY {:.1}  IDLE BEHIND US {:.1}", ms - idle, c[2] / 1e3),
-        format!("RECORDING {:.0} MS  COPY BACK {:.1}", c[9] / 1e6, c[5] / 1e3),
-        format!("MB UP {:.0}  TEXTURES {:.0}  BACK {:.0}", c[7] / 1e6, c[4] / 1e6, c[6] / 1e6),
+        format!(
+            "SUBMIT BUSY {:.1}  WAITS FOR GPU {:.1}",
+            c[0] / 1e3,
+            c[3] / 1e3
+        ),
+        format!(
+            "GPU BUSY {:.1}  IDLE BEHIND US {:.1}",
+            ms - idle,
+            c[2] / 1e3
+        ),
+        format!(
+            "RECORDING {:.0} MS  COPY BACK {:.1}",
+            c[9] / 1e6,
+            c[5] / 1e3
+        ),
+        format!(
+            "MB UP {:.0}  TEXTURES {:.0}  BACK {:.0}",
+            c[7] / 1e6,
+            c[4] / 1e6,
+            c[6] / 1e6
+        ),
         format!("RAM {:.1} GB  IN MEMORY {:.1}", gb(private), gb(working)),
-        format!("VRAM {:.1}/{:.1} GB  SHARED {:.1}", gb(used), gb(budget), gb(shared)),
+        format!(
+            "VRAM {:.1}/{:.1} GB  SHARED {:.1}",
+            gb(used),
+            gb(budget),
+            gb(shared)
+        ),
         format!("THIS PANEL {:.0} US A FRAME", cost),
     ]
 }
@@ -246,7 +277,9 @@ impl Buffers {
         let (width, height) = size(scale);
         let pitch = (width * colours(format)?[0].len() as u32).next_multiple_of(256);
         let bytes = u64::from(pitch) * u64::from(height);
-        let uploads = (0..UPLOADS).map(|_| host.upload_buffer(bytes)).collect::<Option<Vec<_>>>()?;
+        let uploads = (0..UPLOADS)
+            .map(|_| host.upload_buffer(bytes))
+            .collect::<Option<Vec<_>>>()?;
         let heap = D3D12_HEAP_PROPERTIES {
             Type: D3D12_HEAP_TYPE_DEFAULT,
             ..Default::default()
@@ -257,7 +290,10 @@ impl Buffers {
             Height: 1,
             DepthOrArraySize: 1,
             MipLevels: 1,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
             ..Default::default()
         };
@@ -265,18 +301,41 @@ impl Buffers {
         // SAFETY: plain creation of a buffer.
         unsafe {
             host.device
-                .CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, None, &mut card)
+                .CreateCommittedResource(
+                    &heap,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    None,
+                    &mut card,
+                )
                 .ok()?;
         }
-        Some(Buffers { format, scale, pitch, uploads, card: card?, turn: 0, fresh: false })
+        Some(Buffers {
+            format,
+            scale,
+            pitch,
+            uploads,
+            card: card?,
+            turn: 0,
+            fresh: false,
+        })
     }
 
     fn write(&mut self, lines: &[String]) {
-        let Some(colours) = colours(self.format) else { return };
+        let Some(colours) = colours(self.format) else {
+            return;
+        };
         let picture = painted(lines, self.scale, colours, self.pitch as usize);
         self.turn = (self.turn + 1) % UPLOADS;
         // SAFETY: a mapped upload buffer of the picture's size, which the card read a second or more ago.
-        unsafe { std::ptr::copy_nonoverlapping(picture.as_ptr(), self.uploads[self.turn].1, picture.len()) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                picture.as_ptr(),
+                self.uploads[self.turn].1,
+                picture.len(),
+            )
+        };
         self.fresh = true;
     }
 }
@@ -342,7 +401,13 @@ impl Panel {
         let c = counters.since(self.before, frames);
         self.before = counters;
         let cost = self.cost.as_secs_f64() * 1e6 / frames;
-        self.lines = text(&c, elapsed.as_secs_f64() * 1e3 / frames, self.worst, cost, host);
+        self.lines = text(
+            &c,
+            elapsed.as_secs_f64() * 1e3 / frames,
+            self.worst,
+            cost,
+            host,
+        );
         self.changed = true;
         (self.since, self.frames, self.worst) = (now, 0, 0.0);
         self.cost = now.elapsed();
@@ -365,14 +430,20 @@ impl Panel {
         // Not the title's: the frame recorder leaves it out.
         let _ours = crate::replay::record::unrecorded();
         let scale = scale(height);
-        if self.buffers.as_ref().is_none_or(|b| (b.format, b.scale) != (format, scale)) {
+        if self
+            .buffers
+            .as_ref()
+            .is_none_or(|b| (b.format, b.scale) != (format, scale))
+        {
             // (What the card may still read stays: a picture's size changes once or twice in a run.)
             std::mem::forget(self.buffers.take());
             self.buffers = Buffers::new(host, format, scale);
             self.failed = self.buffers.is_none();
             self.changed = true;
         }
-        let Some(buffers) = &mut self.buffers else { return };
+        let Some(buffers) = &mut self.buffers else {
+            return;
+        };
         if std::mem::take(&mut self.changed) {
             buffers.write(&self.lines);
         }
@@ -407,7 +478,9 @@ impl Panel {
             let to = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: std::mem::transmute_copy(back),
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    SubresourceIndex: 0,
+                },
             };
             let part = D3D12_BOX {
                 left: 0,
@@ -454,12 +527,21 @@ mod tests {
             // The rim is black, the first letter's top row lit in its middle.
             assert_eq!(at(0, 0), colours[0]);
             assert_eq!(at((RIM + 2) * scale, RIM * scale), colours[1]);
-            assert_eq!(at((RIM + 2) * scale + scale - 1, RIM * scale + scale - 1), colours[1]);
+            assert_eq!(
+                at((RIM + 2) * scale + scale - 1, RIM * scale + scale - 1),
+                colours[1]
+            );
             assert_eq!(at(RIM * scale, RIM * scale), colours[0]);
             // Small letters are shown as capitals, a line and a cell on.
-            assert_eq!(at((RIM + CELL.0 + 2) * scale, (RIM + CELL.1) * scale), colours[1]);
+            assert_eq!(
+                at((RIM + CELL.0 + 2) * scale, (RIM + CELL.1) * scale),
+                colours[1]
+            );
             // Nothing past a line's end.
-            assert_eq!(at((RIM + CELL.0 * 2 + 2) * scale, (RIM + CELL.1) * scale), colours[0]);
+            assert_eq!(
+                at((RIM + CELL.0 * 2 + 2) * scale, (RIM + CELL.1) * scale),
+                colours[0]
+            );
         }
     }
 

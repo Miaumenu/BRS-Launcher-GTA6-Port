@@ -428,8 +428,13 @@ fn title_priority(asked: i32) -> i32 {
 /// [`title_priority`].
 pub extern "system" fn SetThreadPriority(thread: *mut c_void, priority: i32) -> i32 {
     static AS_SET: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    let as_set = *AS_SET.get_or_init(|| std::env::var_os("SIXM_TITLE_PRIORITIES").is_some_and(|v| v == "0"));
-    let priority = if as_set { priority } else { title_priority(priority) };
+    let as_set =
+        *AS_SET.get_or_init(|| std::env::var_os("SIXM_TITLE_PRIORITIES").is_some_and(|v| v == "0"));
+    let priority = if as_set {
+        priority
+    } else {
+        title_priority(priority)
+    };
     // SAFETY: the title passes a thread handle.
     unsafe { windows_sys::Win32::System::Threading::SetThreadPriority(thread, priority) }
 }
@@ -687,7 +692,10 @@ mod tests {
     /// it sets them.
     #[test]
     fn no_title_thread_waits_for_idle_processors() {
-        let given: Vec<i32> = [-15, -2, -1, 0, 1, 2, 15].into_iter().map(title_priority).collect();
+        let given: Vec<i32> = [-15, -2, -1, 0, 1, 2, 15]
+            .into_iter()
+            .map(title_priority)
+            .collect();
         assert_eq!(given, [-1, -1, -1, 0, 1, 2, 15]);
         use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadPriority};
         std::thread::spawn(|| {
@@ -734,9 +742,15 @@ mod tests {
                     .collect::<Vec<_>>()
             }
         };
-        let some = title_argv("sixm-multiversion.exe", &["-skipToIIS".into(), "-x=1".into()]);
+        let some = title_argv(
+            "sixm-multiversion.exe",
+            &["-skipToIIS".into(), "-x=1".into()],
+        );
         assert_eq!(read(&some), ["sixm-multiversion.exe", "-skipToIIS", "-x=1"]);
-        assert_eq!(read(&title_argv("sixm-multiversion.exe", &[])), ["sixm-multiversion.exe"]);
+        assert_eq!(
+            read(&title_argv("sixm-multiversion.exe", &[])),
+            ["sixm-multiversion.exe"]
+        );
         // What the title is given: the same list every time.
         assert_eq!(__p___argc(), __p___argc());
         // SAFETY: as above.

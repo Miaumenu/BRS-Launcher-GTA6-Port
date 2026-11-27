@@ -15,8 +15,12 @@
 //! share, [`console`] which console model the title sees. Planned:
 //! `present` (swap chain).
 
+#[cfg(all(windows, feature = "diagnostics"))]
+mod ab;
 #[cfg(windows)]
 mod ambient;
+#[cfg(all(windows, feature = "diagnostics"))]
+mod book;
 #[cfg(all(windows, feature = "diagnostics"))]
 mod capture;
 #[cfg(windows)]
@@ -24,8 +28,6 @@ mod compose;
 pub mod console;
 #[cfg(all(windows, feature = "diagnostics"))]
 mod copystat;
-#[cfg(all(windows, feature = "diagnostics"))]
-mod faultbook;
 #[cfg(windows)]
 mod cores;
 pub mod descriptor;
@@ -33,10 +35,10 @@ pub mod device;
 #[cfg(windows)]
 mod draw;
 pub mod dxgi;
+#[cfg(all(windows, feature = "diagnostics"))]
+mod faultbook;
 pub mod fence;
 pub mod frame;
-#[cfg(all(windows, feature = "diagnostics"))]
-mod book;
 #[cfg(windows)]
 mod host;
 #[cfg(windows)]
@@ -46,10 +48,12 @@ mod inplace;
 #[cfg(windows)]
 mod land;
 pub mod list;
+#[cfg(windows)]
+mod memory;
 pub mod object;
-pub mod pipeline;
 #[cfg(windows)]
 mod picked;
+pub mod pipeline;
 #[cfg(windows)]
 mod pool;
 #[cfg(all(windows, feature = "diagnostics"))]
@@ -71,19 +75,17 @@ mod sampler;
 #[cfg(windows)]
 pub mod shader_cache;
 #[cfg(windows)]
-mod memory;
-#[cfg(windows)]
 mod shadow;
-#[cfg(windows)]
-mod tiles;
 pub mod signature;
 mod switch;
-#[cfg(all(windows, feature = "diagnostics"))]
-mod ab;
 #[cfg(windows)]
 mod tdr;
 #[cfg(windows)]
+mod texback;
+#[cfg(windows)]
 mod texture;
+#[cfg(windows)]
+mod tiles;
 pub mod timeline;
 #[cfg(windows)]
 pub mod titlewrite;
@@ -91,8 +93,6 @@ pub mod titlewrite;
 mod upload;
 #[cfg(windows)]
 mod watch;
-#[cfg(windows)]
-mod texback;
 
 #[cfg(windows)]
 pub use host::on_failure;
@@ -110,10 +110,12 @@ pub fn frame_phase() -> u32 {
     copystat::phase()
 }
 #[cfg(windows)]
-pub use inplace::{title_memory_freeing, title_memory_section, title_memory_section_gone, title_memory_view};
+pub use inplace::{
+    title_memory_freeing, title_memory_section, title_memory_section_gone, title_memory_view,
+};
 #[cfg(windows)]
 pub use watch::{
-    kernel_writing, title_memory_allocated, title_memory_freed, title_memory_reading, title_memory_remapped,
-    title_memory_remapping, title_memory_splitting, title_memory_unmapping, title_memory_written,
-    writing as kernel_will_write,
+    kernel_writing, title_memory_allocated, title_memory_freed, title_memory_reading,
+    title_memory_remapped, title_memory_remapping, title_memory_splitting, title_memory_unmapping,
+    title_memory_written, writing as kernel_will_write,
 };

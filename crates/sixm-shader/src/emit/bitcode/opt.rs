@@ -469,10 +469,16 @@ impl Module {
                         (Some(x), Some(y)) => Some(x.max(y)),
                         _ => {
                             let other = if code == 35 { 36 } else { 35 };
-                            let (inner, k) = if self.float_k(*b).is_some() { (*a, *b) } else { (*b, *a) };
+                            let (inner, k) = if self.float_k(*b).is_some() {
+                                (*a, *b)
+                            } else {
+                                (*b, *a)
+                            };
                             let k = self.float_k(k).and_then(|_| of(k))?;
                             let V::Inst(j) = inner else { return None };
-                            let Op::Call(_, inner) = &self.insts[j as usize].op else { return None };
+                            let Op::Call(_, inner) = &self.insts[j as usize].op else {
+                                return None;
+                            };
                             let (_, code) = self.int_k(*inner.first()?)?;
                             let low = inner[1..].iter().find(|x| self.float_k(**x).is_some())?;
                             (code == other).then_some(())?;
