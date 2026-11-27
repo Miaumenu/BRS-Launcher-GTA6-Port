@@ -16,11 +16,13 @@ const MAX_ENCODED_RUN: usize = 512;
 
 const ALLOWED_EXTENSIONS: &[&str] = &[
     "rs", "toml", "md", "txt", "lock", "yml", "yaml", "json", "hlsl", "hlsli", "ps1", "cmd", "sh",
+    "py", "patch",
 ];
 const ALLOWED_NAMES: &[&str] = &[
     ".gitignore",
     ".gitattributes",
     ".editorconfig",
+    "CODEOWNERS",
     ".sixm-root",
     "pre-commit",
     "LICENSE",
@@ -236,6 +238,9 @@ mod tests {
         assert!(check("crates/x/src/lib.rs", b"fn main() {}\n").is_empty());
         assert!(check(".gitignore", b"/target/\n").is_empty());
         assert!(check(".githooks/pre-commit", b"#!/bin/sh\n").is_empty());
+        assert!(check(".github/CODEOWNERS", b"* @team\n").is_empty());
+        assert!(check("scripts/check-docs.py", b"print('ok')\n").is_empty());
+        assert!(check("patches/fix.patch", b"--- a/file\n+++ b/file\n").is_empty());
     }
 
     #[test]

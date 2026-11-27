@@ -16,7 +16,8 @@ In any form (files, string literals, fixtures, snapshots, docs):
 
 ## Allowed
 
-* our own code that understands formats;
+* our own Rust, Python, shell, and PowerShell code that understands formats;
+* text patches and GitHub ownership metadata (`CODEOWNERS`);
 * build identities: BLAKE3 of an executable, CodeView GUID/age;
 * per-build offsets of functions we hook, under names we choose;
 * byte-pattern signatures that locate functions or data in the executable;

@@ -1,6 +1,6 @@
 # BRS-Launcher-GTA6-Port
 
-Projeto público de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável de GTA 6 nem um launcher visual completo.
+Projeto de pesquisa sobre compatibilidade do runtime e suporte gráfico no Windows. O código atual é um protótipo técnico; este repositório ainda não entrega um port jogável de GTA 6 nem um launcher visual completo.
 
 ## Estado atual
 

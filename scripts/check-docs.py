@@ -21,14 +21,14 @@ REQUIRED = (
     "reports/hardware/_TEMPLATE.md",
     "configs/brs-launcher-gta6-port.example.toml",
 )
-ARCHIVE_DIRS = {"docs/history", "reports/archive"}
+EXCLUDED_DOC_DIRS = {"docs/history", "reports/archive", "inspiration"}
 
 
 def markdown_files() -> list[Path]:
     files = []
     for path in ROOT.rglob("*.md"):
         relative = path.relative_to(ROOT).as_posix()
-        if any(relative == archived or relative.startswith(archived + "/") for archived in ARCHIVE_DIRS):
+        if any(relative == excluded or relative.startswith(excluded + "/") for excluded in EXCLUDED_DOC_DIRS):
             continue
         if ".git" not in path.parts and "target" not in path.parts:
             files.append(path)
