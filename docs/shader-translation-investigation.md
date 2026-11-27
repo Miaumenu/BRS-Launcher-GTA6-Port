@@ -1,4 +1,4 @@
-# GambiarraLauncher + GTA VI (Scarlett) — o que já se sabe
+# GambiarraLauncher + o título Xbox Series — o que já se sabe
 
 **Última atualização:** 27/11/2026
 **Escopo:** rodar o `game_scarlett_master.exe` (build Series 1.0.2.1) no Windows através do GambiarraLauncher, o que funciona, o que não funciona, e o que é limite de hardware.
@@ -20,7 +20,7 @@ Este documento é para ser **continuado por outras pessoas**. Cada achado traz a
 |---|---|
 | O jogo carrega, mapeia e liga os imports | **funciona** (`0 missing`) |
 | O jogo renderiza e apresenta frames | **funciona** (2048+ frames, arte 2D pixel-correta) |
-| Tradução dos shaders do jogo (26.084 programas) | **99,2% emitem DXIL** |
+| Tradução dos shaders do jogo (26.084 programas) | **99,98% emitem DXIL** |
 | Chegar ao mundo / gameplay | **não** — barrado por hardware |
 | Mesh shaders (35% dos shaders do jogo) | **impossível nesta máquina** |
 
@@ -113,7 +113,7 @@ containers found       26503 (in 1 files)
 Dois fatos que decidem estratégia:
 
 1. **`with LLVM bitcode 0` e `PC-standard layout 0`.** O build do Xbox não carrega nenhuma forma portátil de shader — só código de máquina GFX10. Não existe "recompilar"; ou se traduz a ISA, ou se reescreve o shader do zero.
-2. **9.282 dos 26.503 são mesh shaders (35%).** A geometria do GTA VI no Series X passa por mesh shaders.
+2. **9.282 dos 26.503 são mesh shaders (35%).** A geometria do título no Series X passa por mesh shaders.
 
 `26698 - 26503 = 195` programas a mais que containers: são os 195 containers que trazem **duas** etapas (Es + Gs).
 
@@ -181,7 +181,7 @@ Vale para **qualquer GPU GCN** (Polaris, Vega, e as placas AMD anteriores ao RDN
 
 O tradutor **converte os 8.765 programas de mesh perfeitamente** (ver §7) — e o host não executa nenhum. É por isso que a arte 2D sai pixel-correta e o mundo nunca aparece.
 
-Nenhuma conversão de asset cria unidade de mesh shader ou de raytracing. Nem um port nativo perfeito do GTA VI rodaria numa RX 550 de 2 GB.
+Nenhuma conversão de asset cria unidade de mesh shader ou de raytracing. Nem um port nativo perfeito do título rodaria numa RX 550 de 2 GB.
 
 ---
 
@@ -199,7 +199,7 @@ DXIL         14247 emitted of 14247 vertex and pixel programs
               8765 emitted of  8765 mesh programs
 ```
 
-**99,2% do jogo converte, e os mesh shaders convertem 100%.**
+**99,98% do título converte, e os mesh shaders convertem 100%.**
 
 As 202 falhas restantes:
 
@@ -332,7 +332,7 @@ Todos os **2.677 programas de compute validaram**. Os erros de `PSV0` atingem os
 Corrida de 250 s com a correção wave32, DRED e GPU timing ligados:
 
 - **sem remoção de device**, 2048+ frames apresentados
-- `frame-1024.png`: arte de carregamento do GTA VI, **cor cheia e correta**
+- `frame-1024.png`: arte de carregamento do título, **cor cheia e correta**
 - `frame-2048.png`: preto — 205 black frames no log
 - 223 `slow host submission`
 - **nunca** emitiu `the world's first frame` — nenhum frame chegou a 500 draws, logo não houve gameplay
@@ -348,9 +348,9 @@ Cuidado ao ler logs: um filtro que casa a palavra `DRED` pega o nome da pasta de
 
 Por ordem de retorno:
 
-1. **Testar numa GPU que atende o requisito** — RDNA 2+ ou Turing+, SM 6.6, mesh shaders, ≥8 GB. É o experimento decisivo: com 99,2% dos shaders convertendo, é alta a chance de chegar ao gameplay. Enquanto isso não acontece, toda medição aqui é o teto da RX 550, não o do software.
+1. **Testar numa GPU que atende o requisito** — RDNA 2+ ou Turing+, SM 6.6, mesh shaders, ≥8 GB. É o experimento decisivo: com 99,98% dos shaders convertendo, é alta a chance de chegar ao gameplay. Enquanto isso não acontece, toda medição aqui é o teto da RX 550, não o do software.
 2. **Fechar os 196 geometry shaders** (§8). Não depende de GPU nova. 97% do que falta na tradução.
-3. **Os 6 compute de `a descriptor read only as data`.**
+3. **Os 5 compute de `a descriptor read only as data`.**
 4. **Baseline de `--validate`** (§9) para saber se os erros de `PSV0` são nossos.
 5. **A remoção de device aos 55 s** (§10), com DRED, se voltar a aparecer.
 

@@ -108,9 +108,17 @@ de motivos aceitos. Estava travado em compute por falta de um caso conhecido em 
 |---|---|---|
 | `resources ... tracked` | 25.889 de 26.084 | **26.084 de 26.084** |
 | geometry shaders falhando | **196** | **0** |
-| **total de falhas** | **202** | **6** |
+| **total de falhas** | **202** | **5** |
 
-De 26.084 programas, falham 6 — todos o mesmo motivo (`Cs: a descriptor read only as data`).
+De 26.084 programas, falham 5 — todos o mesmo motivo (`Cs: a descriptor read only as data`).
+
+> **Remedido em 27/11/2026 com a árvore atual: 5.** O log preservado em
+> `logs/traducao-offline.txt` é a medição **antes** da correção (`resources 25.889 de
+> 26.084`) e agrupa `196 Gs + 6 Cs = 202`. A coluna DEPOIS originalmente repetia aquele
+> `6` sem remedir os `Cs`. A corrida de hoje emite os mesmos `2677 de 2682` programas de
+> compute e agrupa **5** ocorrências. O formato do agrupamento também mudou (`5  emit:` em
+> vez de `6  Cs  emit:`), então a diferença de um pode ser mudança de contagem no CLI e
+> não um programa a mais convertendo — não foi investigada.
 
 ### Teste de regressão
 
@@ -142,6 +150,5 @@ Os diagnósticos temporários (`GAMBIARRA_WHY_SGPR`, `GAMBIARRA_WHY_LAYOUT`, `GA
 
 1. **Confirmar o 0001 numa segunda máquina GCN.**
 2. **Rodar em GPU com mesh shaders e SM 6.6** — é o experimento que decide se o projeto funciona. Aqui só dá para medir o teto da RX 550.
-3. **Os 196 `Gs`.** O caminho não é mais `user_sgpr`: é desmontar o `GS_VoxelizeGeneric` no offset 0x44 e ler as instruções que montam o endereço. O dump existe (`GAMBIARRA_DUMP_CODE=Gs`) e ainda não foi lido.
-4. **Os 6 compute** de `a descriptor read only as data`.
-5. **Linha de base do `--validate`**: 17.550 erros de `PSV0` ainda não foram comparados com uma árvore limpa, então não se sabe se são nossos.
+3. **Os 5 compute** de `a descriptor read only as data`.
+4. **Linha de base do `--validate`**: 17.550 erros de `PSV0` ainda não foram comparados com uma árvore limpa, então não se sabe se são nossos.
