@@ -1,6 +1,23 @@
---- a/crates/sixm-shader/src/resource.rs
-+++ b/crates/sixm-shader/src/resource.rs
-@@ -879,10 +879,15 @@
+Assunto: caminho MEMORY para o estágio Gs (geometry shaders)
+
+Os 196 GS_VoxelizeGeneric montam um ponteiro de 40 bits a partir de dois user
+SGPRs que a root signature declara com largura zero. O caminho MEMORY, que já
+tratava esse caso em compute, passa a valer para Gs.
+
+Medido offline sobre o pacote completo: resources rastreados 25.889 -> 26.084
+de 26.084; geometry shaders falhando 196 -> 0.
+
+Árvore-alvo: crates com o prefixo `gambiarra-` (gerado de GambiarraLauncher
+em 27/11/2026). Em árvore com o prefixo antigo `sixm-` ou `victory-`, troque
+os caminhos.
+
+Aplicar:  git apply 0003-caminho-MEMORY-para-geometry-shaders.patch
+
+diff --git a/crates/gambiarra-shader/src/resource.rs b/crates/gambiarra-shader/src/resource.rs
+index 8fbdf8e..e218bed 100644
+--- a/crates/gambiarra-shader/src/resource.rs
++++ b/crates/gambiarra-shader/src/resource.rs
+@@ -880,10 +880,15 @@ impl<'a> Tracer<'a> {
      }
  
      /// The address of an access that traces to no root parameter (`why`

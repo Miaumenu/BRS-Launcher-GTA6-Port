@@ -1,6 +1,36 @@
---- a/crates/sixm-shader/src/emit/lower.rs
-+++ b/crates/sixm-shader/src/emit/lower.rs
-@@ -1047,6 +1047,18 @@
+Assunto: wave32 em host de onda 64 (AMD pré-RDNA)
+
+Um programa wave32 do console cujo grupo cabe numa onda deixa de declarar
+WaveSize(32) quando a onda mais estreita do host tem 64 lanes; o driver
+recusava essa declaração com E_INVALIDARG. Grupo com mais de 32 threads
+mantém a declaração, para o host recusar o pipeline em vez de rodar errado.
+
+Medido na Radeon RX 550 (GCN 4): avisos "wave lane count of 32" 509 -> 3;
+pipelines recusados com E_INVALIDARG 298 -> 2.
+
+Árvore-alvo: crates com o prefixo `gambiarra-` (gerado de GambiarraLauncher
+em 27/11/2026). Em árvore com o prefixo antigo `sixm-` ou `victory-`, troque
+os caminhos.
+
+Aplicar:  git apply 0001-wave32-em-host-de-onda-64.patch
+
+diff --git a/crates/gambiarra-gpu/src/host.rs b/crates/gambiarra-gpu/src/host.rs
+index ed983a8..c0b052f 100644
+--- a/crates/gambiarra-gpu/src/host.rs
++++ b/crates/gambiarra-gpu/src/host.rs
+@@ -1024,6 +1024,7 @@ fn create() -> windows::core::Result<Host> {
+                 "host wave lanes"
+             );
+             gambiarra_shader::emit::set_host_max_wave(o1.WaveLaneCountMax);
++            gambiarra_shader::emit::set_host_min_wave(o1.WaveLaneCountMin);
+             // (RDNA has waves of 32 and 64, the vendor's older cards of 64 alone.)
+             let amd = crate::indirect::amd(&device);
+             gambiarra_shader::emit::set_host_rdna(
+diff --git a/crates/gambiarra-shader/src/emit/lower.rs b/crates/gambiarra-shader/src/emit/lower.rs
+index 538db33..71be12e 100644
+--- a/crates/gambiarra-shader/src/emit/lower.rs
++++ b/crates/gambiarra-shader/src/emit/lower.rs
+@@ -1138,6 +1138,18 @@ pub fn set_host_max_wave(lanes: u32) {
      HOST_MAX_WAVE.store(lanes, std::sync::atomic::Ordering::Relaxed);
  }
  
@@ -19,7 +49,7 @@
  thread_local! {
      /// See [`take_needs`].
      static NEEDS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
-@@ -1122,10 +1134,16 @@
+@@ -1213,10 +1225,16 @@ fn own_bits_on() -> bool {
  }
  
  /// What the translator was told of the host, for a cache's key: the widest
@@ -40,7 +70,7 @@
  }
  
  static HOST_RDNA: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-@@ -1185,6 +1203,21 @@
+@@ -1280,6 +1298,21 @@ thread_local! {
      pub(super) static TEST_HOST_WAVE: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
  }
  
@@ -62,7 +92,7 @@
  pub(super) fn reads_mask_as_data(st: &Structured, i: &Inst) -> bool {
      // A scalar select uses the condition of the whole guest wave, even
      // when the preceding mask operation has no scalar-dword consumers.
-@@ -1544,6 +1577,18 @@
+@@ -1649,6 +1682,18 @@ impl<'a> Lower<'a> {
              }
              if console_lanes || one_wave && s.lds_dwords > 0 {
                  s.wave_size = Some(wave);
@@ -81,7 +111,7 @@
              }
          }
          // The title's barriers a thread of the group may never reach, which
-@@ -2441,7 +2486,8 @@
+@@ -2587,7 +2632,8 @@ impl<'a> Lower<'a> {
          let root_srvs = self.s.root_srvs.iter().map(|r| r.0).collect();
          let root_uavs = self.s.root_uavs.iter().map(|r| r.0).collect();
          let cmp_samplers = self.s.cmp_samplers;
@@ -91,9 +121,24 @@
          Ok(Lowered {
              wave_size,
              cmp_samplers,
---- a/crates/sixm-shader/src/emit/shader.rs
-+++ b/crates/sixm-shader/src/emit/shader.rs
-@@ -229,6 +229,11 @@
+diff --git a/crates/gambiarra-shader/src/emit/mod.rs b/crates/gambiarra-shader/src/emit/mod.rs
+index c1056a9..c94d4d8 100644
+--- a/crates/gambiarra-shader/src/emit/mod.rs
++++ b/crates/gambiarra-shader/src/emit/mod.rs
+@@ -117,7 +117,7 @@ use crate::native::{HwStage, NativeProgram, RootType};
+ use crate::{ShaderError, io, ir, resource, structure};
+ 
+ pub use bitcode::census;
+-pub use lower::{host_settings, set_host_max_wave, set_host_rdna};
++pub use lower::{host_settings, set_host_max_wave, set_host_min_wave, set_host_rdna};
+ pub use rect::rect_list_gs;
+ pub use sampler::StaticSampler;
+ pub use shader::{
+diff --git a/crates/gambiarra-shader/src/emit/shader.rs b/crates/gambiarra-shader/src/emit/shader.rs
+index b39ec1c..596d567 100644
+--- a/crates/gambiarra-shader/src/emit/shader.rs
++++ b/crates/gambiarra-shader/src/emit/shader.rs
+@@ -229,6 +229,11 @@ pub(crate) struct Shader {
      pub threads: Option<[u32; 3]>,
      /// The wave size a compute shader requires (`WaveSize`).
      pub wave_size: Option<u32>,
@@ -105,7 +150,7 @@
      /// Thread-group shared memory, in dwords.
      pub lds_dwords: u32,
      lds: Option<V>,
-@@ -283,6 +288,7 @@
+@@ -283,6 +288,7 @@ impl Shader {
              nonuniform_handles: 0,
              threads: None,
              wave_size: None,
@@ -113,7 +158,7 @@
              lds_dwords: 0,
              lds: None,
              main,
-@@ -844,7 +850,7 @@
+@@ -864,7 +870,7 @@ impl Shader {
                  }
              }
          }
@@ -122,7 +167,7 @@
              props.push(i32c(&mut self, 11));
              let n = Some(i32c(&mut self, n));
              props.push(self.m.md_node(vec![n]));
-@@ -944,7 +950,7 @@
+@@ -964,7 +970,7 @@ impl Shader {
              geometry: self.geometry.map(|g| g.max_vertices),
              bindings: &bindings,
              threads: self.threads.unwrap_or_default(),
@@ -131,20 +176,11 @@
          });
          let hash = [0u8; 20];
          let psg1 = container::signature(&self.prims, false);
---- a/crates/sixm-shader/src/emit/mod.rs
-+++ b/crates/sixm-shader/src/emit/mod.rs
-@@ -118,7 +118,7 @@
- 
- pub use bitcode::census;
- pub use sampler::StaticSampler;
--pub use lower::{host_settings, set_host_max_wave, set_host_rdna};
-+pub use lower::{host_settings, set_host_max_wave, set_host_min_wave, set_host_rdna};
- pub use rect::rect_list_gs;
- pub use shader::{
-     MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS, SLOT_MEMORY, SLOT_STRIDES,
---- a/crates/sixm-shader/src/emit/wave64_tests.rs
-+++ b/crates/sixm-shader/src/emit/wave64_tests.rs
-@@ -647,6 +647,54 @@
+diff --git a/crates/gambiarra-shader/src/emit/wave64_tests.rs b/crates/gambiarra-shader/src/emit/wave64_tests.rs
+index fc29ca3..281ae32 100644
+--- a/crates/gambiarra-shader/src/emit/wave64_tests.rs
++++ b/crates/gambiarra-shader/src/emit/wave64_tests.rs
+@@ -761,6 +761,54 @@ fn a_lane_mask_joined_with_a_number_is_read_as_the_number_it_is() {
      eprintln!("ran on the hardware device: the mask's bits, or the number");
  }
  
@@ -199,13 +235,3 @@
  /// A 32-lane console wave. `if (t < s0) { ... SCC = (s1 == 7) }` and a branch on SCC after
  /// the join: the skip brings the SCC of `s_and_saveexec` ("some lane is left") along
  /// (`rtdirectionalshadows:CS_RTShadowTrace32HQ_TiledFarOnly`, 0x360-0x39c). On the console
---- a/crates/sixm-gpu/src/host.rs
-+++ b/crates/sixm-gpu/src/host.rs
-@@ -936,6 +936,7 @@
-         {
-             tracing::info!(min = o1.WaveLaneCountMin, max = o1.WaveLaneCountMax, "host wave lanes");
-             sixm_shader::emit::set_host_max_wave(o1.WaveLaneCountMax);
-+            sixm_shader::emit::set_host_min_wave(o1.WaveLaneCountMin);
-             // (RDNA has waves of 32 and 64, the vendor's older cards of 64 alone.)
-             let amd = crate::indirect::amd(&device);
-             sixm_shader::emit::set_host_rdna(amd && o1.WaveLaneCountMin == 32 && o1.WaveLaneCountMax == 64);
