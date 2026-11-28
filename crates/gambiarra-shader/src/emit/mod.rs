@@ -91,6 +91,9 @@ pub mod host;
 #[cfg(all(test, windows))]
 mod intersect_tests;
 mod lower;
+#[cfg(all(test, windows))]
+mod merge_tests;
+mod mesh_reader;
 mod own_bits;
 #[cfg(all(test, windows))]
 mod permlane_tests;
@@ -118,14 +121,16 @@ use crate::{ShaderError, io, ir, resource, structure};
 
 pub use bitcode::census;
 pub use lower::{host_settings, set_host_max_wave, set_host_min_wave, set_host_rdna};
+pub use mesh_reader::mesh_reader_vs;
 pub use rect::rect_list_gs;
 pub use sampler::StaticSampler;
 pub use shader::{
-    MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS,
-    SLOT_MEMORY, SLOT_STRIDES, SLOT_STRIDES_COUNT, SLOT_TABLE_STRIDES, USER_DATA_SPACE,
-    USER_DISPATCH_THREADS_X, USER_MEMORY_BASE, USER_ROOT_ADDRESS, USER_VIEW_ADDRESS,
-    USER_VIEW_BIAS, VIEW_INTEGER, VIEW_SIGNED, VIEW_STRIDE_BITS, raw_views, set_raw_views,
-    set_view_heap_limit, view_heap_limit,
+    MEMORY_FAULTS, MEMORY_PAGES, MEMORY_READ_ONLY, MESH_ARG_DWORDS, MESH_ARG_GROUP, MESH_ARG_PRIMS,
+    ROOT_CBV_SPACE, SAMPLER_SPACE, SLOT_FAULTS, SLOT_MEMORY, SLOT_MESH_ARGS, SLOT_MESH_OUT,
+    SLOT_STRIDES, SLOT_STRIDES_COUNT, SLOT_TABLE_STRIDES, USER_DATA_SPACE, USER_DISPATCH_THREADS_X,
+    USER_MEMORY_BASE, USER_MERGED_GROUPS_X, USER_ROOT_ADDRESS, USER_VIEW_ADDRESS, USER_VIEW_BIAS,
+    VIEW_INTEGER, VIEW_SIGNED, VIEW_STRIDE_BITS, raw_views, set_raw_views, set_view_heap_limit,
+    view_heap_limit,
 };
 
 /// The loop limit without an override: 2^20.
@@ -190,6 +195,50 @@ pub fn group_sync() -> u8 {
             _ => 2,
         }
     })
+}
+
+/// `GAMBIARRA_MERGE_WAVE32=1` (off by default): on a host whose waves are 64 lanes and
+/// nothing else (AMD GCN), a console wave32 compute program whose thread group is one wave
+/// of 32 threads runs two of its groups in each host group of 64 threads instead of one
+/// group in half a wave (`bitcode::halves`): host group `g` holds the console's groups `2g`
+/// and `2g + 1`, each half of the wave with its own group id, thread ids, wave operations
+/// and group-shared memory. The program reads the title's group count along X from the
+/// user-data word [`USER_MERGED_GROUPS_X`], and the host dispatches half as many groups
+/// (rounded up) where it sets that word; where it does not (0), each host group runs one
+/// console group as before. A program whose code the merge cannot split (a wave operation
+/// it has no per-half form of, a ballot read whole) is translated without it; each
+/// program it was tried on is logged (`GAMBIARRA_MERGE_WAVE32: merged` / `skipped`).
+///
+/// Part of the translation: the shader cache keys on it ([`host_settings`]).
+pub fn merge_wave32() -> bool {
+    #[cfg(test)]
+    if let Some(on) = TEST_MERGE_WAVE32.get() {
+        return on;
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("GAMBIARRA_MERGE_WAVE32").is_some_and(|v| v == "1"))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's choice for [`merge_wave32`], for its thread only.
+    pub(crate) static TEST_MERGE_WAVE32: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// The first `CS_...` name in a container's bytes (the title's containers carry their
+/// program's name), for logs; empty without one.
+fn program_name(container: &[u8]) -> String {
+    container
+        .windows(3)
+        .position(|w| w == b"CS_")
+        .map(|at| {
+            container[at..]
+                .iter()
+                .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+                .map(|&b| char::from(b))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Whether buffer atomics of the ray-tracing structure builder stand between
@@ -381,6 +430,54 @@ impl HostShader {
     }
 }
 
+/// Where a mesh program translated as compute ([`translate_mesh_as_compute`]) puts what it
+/// exports, in dwords from the address bound at [`SLOT_MESH_OUT`]:
+///
+/// - vertex `v` of group `g` (the host's group number within the part of the dispatch run)
+///   at `(g * max_vertices + v) * vertex_dwords`, its outputs' columns one dword each from
+///   their offset in `vertex_outputs` (16-bit outputs as 32-bit floats);
+/// - primitive `p` of group `g` at `prims + (g * max_primitives + p) * primitive_dwords`,
+///   `prims` the args' [`MESH_ARG_PRIMS`] dword: its three vertices (numbers in the vertex
+///   part, the group's own `g * max_vertices` included; a culled primitive names one vertex
+///   three times), then its outputs' columns from their offset plus 3.
+///
+/// Every primitive of the declared maximum is written, culled or not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeshLayout {
+    /// Lanes of a group.
+    pub threads: u32,
+    pub max_vertices: u32,
+    pub max_primitives: u32,
+    pub vertex_dwords: u32,
+    pub primitive_dwords: u32,
+    /// The mesh program's vertex outputs, each with its first dword in a vertex.
+    pub(crate) vertex_outputs: Vec<(container::SigElement, u32)>,
+    /// Its per-primitive outputs, each with its first dword after the three vertex numbers.
+    pub(crate) primitive_outputs: Vec<(container::SigElement, u32)>,
+}
+
+impl MeshLayout {
+    /// Dwords of output a group writes: its vertices and its primitives.
+    pub fn group_dwords(&self) -> u64 {
+        u64::from(self.max_vertices) * u64::from(self.vertex_dwords)
+            + u64::from(self.max_primitives) * u64::from(self.primitive_dwords)
+    }
+}
+
+/// The mesh program of a console container as a compute program of the same thread group,
+/// for hosts without mesh shaders: what the mesh stage would export it stores as
+/// [`MeshLayout`] says, for [`mesh_reader_vs`] to draw. Bindings as [`translate`]'s, and
+/// the root UAV [`SLOT_MESH_OUT`] and root CBV [`SLOT_MESH_ARGS`].
+pub fn translate_mesh_as_compute(container: &[u8]) -> Result<(HostShader, MeshLayout), ShaderError> {
+    let mut shader = lower::with_mesh_as_compute(|| translate(container))?;
+    let layout = lower::take_mesh_layout().ok_or(ShaderError::Unsupported {
+        offset: 0,
+        what: "a container without a mesh program",
+    })?;
+    shader.stage = HwStage::Cs;
+    Ok((shader, layout))
+}
+
 /// One dword of user data and the root parameter that fills it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserData {
@@ -404,12 +501,25 @@ pub struct UserData {
 /// already translated came out changed (an extra evaluation in each), for
 /// the sake of 9 that did not translate.
 pub fn translate(container: &[u8]) -> Result<HostShader, ShaderError> {
-    match translate_plain(container) {
+    lower::take_merge_outcome();
+    let result = match translate_plain(container) {
         Err(ShaderError::Unsupported { what, .. }) if what == lower::FIRST_HALF => {
             lower::with_first_half_pairs(|| translate_plain(container))
         }
         other => other,
+    };
+    // (`merge_wave32`: one line per program it was tried on)
+    if let Some(outcome) = lower::take_merge_outcome() {
+        let name = program_name(container);
+        match (outcome, &result) {
+            (Ok(threads), Ok(_)) => {
+                eprintln!("GAMBIARRA_MERGE_WAVE32: merged {name} (groups of {threads:?})")
+            }
+            (Ok(_), Err(e)) => eprintln!("GAMBIARRA_MERGE_WAVE32: merged {name}, but: {e}"),
+            (Err(why), _) => eprintln!("GAMBIARRA_MERGE_WAVE32: skipped {name}: {why}"),
+        }
     }
+    result
 }
 
 fn translate_plain(container: &[u8]) -> Result<HostShader, ShaderError> {
@@ -2016,6 +2126,81 @@ mod tests {
         let res = resource::track(&p, &native.layout, native.stage, Some(&st))?;
         let io = io::raise(&p, &native)?;
         emit(&c, &native, &p, &st, &io, &res)
+    }
+
+    /// A mesh program translated as compute is a compute program of the
+    /// mesh's lanes that stores each lane's vertex and primitive where its
+    /// layout says, vertex numbers counted from the group's first vertex in
+    /// the output, primitives after the args' offset. Two groups of the
+    /// triangle program: lane n's position, and triangle (0, 1, 2) of each
+    /// group in every primitive slot.
+    #[test]
+    fn mesh_programs_run_as_compute() {
+        const PRIM: u32 = 2 << 20 | 1 << 10;
+        let cs = lower::with_mesh_as_compute(|| triangle_mesh(PRIM)).unwrap();
+        let layout = lower::take_mesh_layout().unwrap();
+        assert_eq!(
+            (layout.threads, layout.max_vertices, layout.max_primitives),
+            (32, 32, 32)
+        );
+        assert_eq!((layout.vertex_dwords, layout.primitive_dwords), (4, 3));
+        let c = Container::parse(&cs.dxil).unwrap();
+        // Program version: compute (5), shader model 6.6; no signatures.
+        assert_eq!(c.part(FourCC::DXIL).unwrap().data[..4], [0x66, 0, 5, 0]);
+        assert!(c.part(FourCC::PSG1).is_none());
+        assert!(cs.root_uavs.contains(&SLOT_MESH_OUT));
+        assert!(cs.root_cbvs.contains(&SLOT_MESH_ARGS));
+        #[cfg(windows)]
+        {
+            if let Ok(mut v) = super::validator::Validator::load(
+                super::validator::Validator::default_path().as_deref(),
+            ) {
+                v.validate(&mut cs.dxil.clone()).unwrap();
+            }
+            let Ok(host) = super::host::Host::new(false) else {
+                eprintln!("no SM 6.6 device; skipped");
+                return;
+            };
+            let (root, pso) = host.compute_pipeline(&cs).unwrap();
+            let groups = 2u32;
+            let prims = groups * layout.max_vertices * layout.vertex_dwords;
+            let dwords = prims + groups * layout.max_primitives * layout.primitive_dwords;
+            // Root parameters: user data, then root views by slot.
+            let d = super::host::Dispatch {
+                roots: vec![
+                    (0, super::host::Root::Constants(vec![0])),
+                    (
+                        1,
+                        super::host::Root::View {
+                            srv: false,
+                            data: vec![5, prims, 0, 0],
+                        },
+                    ),
+                    (2, super::host::Root::Uav(dwords)),
+                ],
+                views: &[],
+                samplers: &[],
+                groups: [groups, 1, 1],
+            };
+            let out = host.dispatch(&root, &pso, &d).unwrap().remove(0);
+            let f = |w: u32| f32::from_bits(w);
+            for g in 0..groups {
+                for lane in 0..32u32 {
+                    let at = ((g * 32 + lane) * 4) as usize;
+                    let x = 4.0 * (lane & 1) as f32 - 1.0;
+                    let y = 2.0 * (lane & 2) as f32 - 1.0;
+                    let got = [f(out[at]), f(out[at + 1]), f(out[at + 2]), f(out[at + 3])];
+                    assert_eq!(got, [x, y, 0.5, 1.0], "group {g} vertex {lane}");
+                    let at = (prims + (g * 32 + lane) * 3) as usize;
+                    let first = g * 32;
+                    assert_eq!(
+                        out[at..at + 3],
+                        [first, first + 1, first + 2],
+                        "group {g} primitive {lane}"
+                    );
+                }
+            }
+        }
     }
 
     /// A primitive export's corners are 9-bit indices: the edge flag above

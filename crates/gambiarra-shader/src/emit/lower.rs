@@ -87,7 +87,68 @@ enum Stop {
 }
 
 pub(crate) fn lower(parts: &Parts) -> Result<Lowered, ShaderError> {
-    lower_counted(parts, counted_in_threads(parts))
+    let counted = counted_in_threads(parts);
+    if let Some(threads) = merge_candidate(parts) {
+        let why = if counted {
+            "dispatched in threads (the structure builder's)".to_owned()
+        } else {
+            MERGE_OUTCOME.with(|o| o.borrow_mut().take());
+            MERGING.set(Some(threads));
+            let merged = lower_counted(parts, false);
+            MERGING.set(None);
+            match merged {
+                Ok(l) => {
+                    MERGE_OUTCOME.with(|o| *o.borrow_mut() = Some(Ok(threads)));
+                    return Ok(l);
+                }
+                Err(e) => MERGE_OUTCOME
+                    .with(|o| o.borrow_mut().take())
+                    .and_then(Result::err)
+                    .unwrap_or_else(|| e.to_string()),
+            }
+        };
+        MERGE_OUTCOME.with(|o| *o.borrow_mut() = Some(Err(why)));
+    }
+    lower_counted(parts, counted)
+}
+
+thread_local! {
+    /// While a program is lowered with two console groups per host group: the console
+    /// group's threads ([`merge_candidate`]).
+    static MERGING: std::cell::Cell<Option<[u32; 3]>> = const { std::cell::Cell::new(None) };
+    /// What the last program [`merge_candidate`] took came to: merged (its threads), or why
+    /// not ([`take_merge_outcome`]).
+    static MERGE_OUTCOME: std::cell::RefCell<Option<Result<[u32; 3], String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// What the merge of the program last lowered on this thread came to, if it was one to merge
+/// ([`super::merge_wave32`]): `Ok` with the console group's threads, or why it was not.
+pub(super) fn take_merge_outcome() -> Option<Result<[u32; 3], String>> {
+    MERGE_OUTCOME.with(|o| o.borrow_mut().take())
+}
+
+/// The refusal of a program whose code the merge could not split into halves; the
+/// program is lowered again without merging.
+const MERGE_REFUSED: Why = "a wave32 merge the program does not allow";
+
+/// Whether `parts` is lowered with two of its thread groups in each host group
+/// ([`super::merge_wave32`]), and its threads if so: a console wave32 compute program whose
+/// group is one wave of 32 threads, on a host whose waves are 64 lanes and nothing else
+/// (where a group of 64 threads is one wave and the group of 32 leaves half of it idle).
+fn merge_candidate(parts: &Parts) -> Option<[u32; 3]> {
+    if !super::merge_wave32() || MESH_AS_COMPUTE.get() {
+        return None;
+    }
+    let crate::native::StageIo::Cs(cs) = &parts.native.io else {
+        return None;
+    };
+    (parts.native.stage == HwStage::Cs
+        && !parts.native.wave64
+        && cs.threads.iter().product::<u32>() == 32
+        && host_min_wave() == 64
+        && host_max_wave() == 64)
+        .then_some(cs.threads)
 }
 
 /// Whether the title dispatches the program by a count of threads whose last
@@ -394,6 +455,11 @@ struct Lower<'a> {
     counters: HashMap<usize, (V, Vec<(V, usize)>)>,
     /// The block a loop stopped by [`LOOP_LIMIT`] leaves the program from.
     abort: Option<usize>,
+    /// Two console groups of 32 threads in each host group of 64 ([`merge_candidate`]):
+    /// the console group's threads; once the prologue is made, what the pass over the
+    /// finished program needs of it.
+    merge: Option<[u32; 3]>,
+    merged: Option<super::bitcode::halves::Halves>,
 }
 
 /// Iterations after which a loop is left (per entry into it), unless
@@ -1230,7 +1296,10 @@ fn own_bits_on() -> bool {
 pub fn host_settings() -> [u32; 5] {
     [
         host_max_wave(),
-        host_min_wave(),
+        // (and whether 32-thread groups are merged, which changes the translation)
+        host_min_wave()
+            | u32::from(super::merge_wave32()) << 31
+            | u32::from(super::bitcode::halves::nonuniform_all()) << 30,
         super::shader::view_heap_limit(),
         super::shader::raw_views(),
         host_rdna(),
@@ -1282,6 +1351,43 @@ pub(super) fn with_first_half_pairs<R>(translate: impl FnOnce() -> R) -> R {
     let result = translate();
     FIRST_HALF_PAIRS.set(before);
     result
+}
+
+thread_local! {
+    /// Whether mesh programs are lowered as compute ([`with_mesh_as_compute`]).
+    static MESH_AS_COMPUTE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The layout of the last mesh program lowered as compute.
+    static MESH_LAYOUT: std::cell::RefCell<Option<super::MeshLayout>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `translate` with mesh programs lowered as compute
+/// ([`super::translate_mesh_as_compute`]); [`take_mesh_layout`] then has the layout.
+pub(super) fn with_mesh_as_compute<R>(translate: impl FnOnce() -> R) -> R {
+    MESH_LAYOUT.with(|l| l.borrow_mut().take());
+    let before = MESH_AS_COMPUTE.replace(true);
+    let result = translate();
+    MESH_AS_COMPUTE.set(before);
+    result
+}
+
+/// See [`with_mesh_as_compute`].
+pub(super) fn take_mesh_layout() -> Option<super::MeshLayout> {
+    MESH_LAYOUT.with(|l| l.borrow_mut().take())
+}
+
+/// Each element's first dword in a record of one dword per column, and the record's dwords
+/// after `first` (where the elements start).
+fn record_offsets(elements: &[SigElement], first: u32) -> (Vec<u32>, u32) {
+    let mut at = first;
+    let offsets = elements
+        .iter()
+        .map(|e| {
+            let o = at;
+            at += u32::from(e.cols);
+            o
+        })
+        .collect();
+    (offsets, at)
 }
 
 pub(super) fn host_max_wave() -> u32 {
@@ -1739,6 +1845,7 @@ impl<'a> Lower<'a> {
                 max_primitives: ms.max_primitives,
                 topology: ms.topology,
             });
+            s.mesh_compute = MESH_AS_COMPUTE.get();
             // Barriers order the lanes' LDS accesses; the console's
             // allocation request needs them too, but the host does not. One
             // lane sends that request, and what it dominates (the path for
@@ -1894,6 +2001,8 @@ impl<'a> Lower<'a> {
             code_table: None,
             counters: HashMap::new(),
             abort: None,
+            merge: MERGING.get(),
+            merged: None,
         }
     }
 
@@ -2545,6 +2654,9 @@ impl<'a> Lower<'a> {
             self.s.m.terminate(done, Term::Ret);
             self.s.entry = body;
         }
+        if let Some(threads) = self.merge {
+            self.merge_prologue(threads);
+        }
         self.find_coherent();
         let order = crate::ir::reverse_postorder(&p.blocks);
         for (n, &b) in order.iter().enumerate() {
@@ -2626,6 +2738,14 @@ impl<'a> Lower<'a> {
             self.exit(b)?;
         }
         self.fill_phis()?;
+        if let Some(h) = self.merged.take() {
+            if let Err(why) = self.s.m.split_halves(&h) {
+                MERGE_OUTCOME.with(|o| *o.borrow_mut() = Some(Err(why)));
+                return Err(unsupported(0, MERGE_REFUSED));
+            }
+            self.s.threads = Some([64, 1, 1]);
+            self.s.lds_dwords *= 2;
+        }
         let user_data = self.user_reads.values().copied().collect();
         self.s.samplers = self.samplers.len() as u32;
         let root_cbvs = self.s.root_cbvs.iter().map(|r| r.0).collect();
@@ -2634,6 +2754,10 @@ impl<'a> Lower<'a> {
         let cmp_samplers = self.s.cmp_samplers;
         // what the host is asked for, which a wave the host has no form of is not
         let wave_size = self.s.wave_size.filter(|_| self.s.declare_wave);
+        if self.s.mesh_compute {
+            let layout = self.mesh_layout();
+            MESH_LAYOUT.with(|l| *l.borrow_mut() = Some(layout));
+        }
         Ok(Lowered {
             wave_size,
             cmp_samplers,
@@ -2751,9 +2875,13 @@ impl<'a> Lower<'a> {
             Input::GroupId(c) => return self.compute_id("groupId.i32", 94, c),
             Input::GroupInfo => return Val::Missing("the thread-group info SGPR"),
             Input::MeshGroup => {
-                let Val::I32(g) = self.compute_id("groupId.i32", 94, 0) else {
+                let Val::I32(mut g) = self.compute_id("groupId.i32", 94, 0) else {
                     unreachable!()
                 };
+                if self.s.mesh_compute {
+                    let base = self.mesh_arg(super::shader::MESH_ARG_GROUP);
+                    g = self.s.m.bin(self.s.entry, Bin::Add, g, base);
+                }
                 let n = self.s.m.i32(self.x.mesh_stride);
                 return Val::I32(self.s.m.bin(self.s.entry, Bin::Mul, g, n));
             }
@@ -4324,6 +4452,50 @@ impl<'a> Lower<'a> {
         }
     }
 
+    /// Two console groups in each host group of 64 threads ([`merge_candidate`]): before
+    /// anything else, which half of the host wave this lane is in and which console group
+    /// that half is, from the title's group count the host passes
+    /// ([`super::shader::USER_MERGED_GROUPS_X`]). Host group `g` holds the console's groups
+    /// `2g` and `2g + 1`; the upper half of the last one leaves at once when the count is
+    /// odd. A count of 0 is a dispatch of the title's own groups (a host path that does not
+    /// halve it): each host group is the console group of its number, in its lower half,
+    /// and the upper half leaves. The program's own code follows in a new entry block, and
+    /// the pass over the finished module (`bitcode::halves`) starts after this.
+    fn merge_prologue(&mut self, threads: [u32; 3]) {
+        let original = self.s.entry;
+        let i32t = self.s.t.i32;
+        let count = self.host_word(RootType::Other(super::shader::USER_MERGED_GROUPS_X), 0, 0);
+        let lane = self
+            .s
+            .op(original, "waveGetLaneIndex", Attr::ReadOnly, i32t, 111, &[]);
+        let (zero, one, five) = (self.s.m.i32(0), self.s.m.i32(1), self.s.m.i32(5));
+        let half = self.s.m.bin(original, Bin::LShr, lane, five);
+        let upper = self.s.m.cmp(original, pred::NE, half, zero);
+        let Val::I32(group) = self.compute_id("groupId.i32", 94, 0) else {
+            unreachable!()
+        };
+        let pair = self.s.m.bin(original, Bin::Shl, group, one);
+        let pair = self.s.m.bin(original, Bin::Add, pair, half);
+        let merged = self.s.m.cmp(original, pred::NE, count, zero);
+        let group_x = self.s.m.select(original, merged, pair, group);
+        let inside = self.s.m.cmp(original, pred::IULT, group_x, count);
+        let lower = self.s.m.cmp(original, pred::EQ, half, zero);
+        let runs = self.s.m.select(original, merged, inside, lower);
+        let (body, done) = (self.s.m.new_block(), self.s.m.new_block());
+        self.s.m.terminate(original, Term::CondBr(runs, body, done));
+        self.s.m.terminate(done, Term::Ret);
+        self.s.entry = body;
+        self.s.flags |= flags::WAVE_OPS;
+        self.merged = Some(super::bitcode::halves::Halves {
+            lane,
+            half,
+            upper,
+            group_x,
+            threads,
+            from: self.s.m.inst_count(),
+        });
+    }
+
     /// A console wave64 program in host waves of 32: the first console thread of this host wave
     /// (0, 32, 64, ...). A GPU need not give a host wave consecutive thread indices (NVIDIA's
     /// 8 x 8 groups), so each wave takes the next 32 from an LDS counter instead: every thread
@@ -4934,8 +5106,10 @@ impl<'a> Lower<'a> {
             self.s.m.i32(mesh.max_vertices),
             self.s.m.i32(mesh.max_primitives),
         );
-        self.s
-            .op(e, "setMeshOutputCounts", Attr::NoUnwind, void, 168, &[v, p]);
+        if !self.s.mesh_compute {
+            self.s
+                .op(e, "setMeshOutputCounts", Attr::NoUnwind, void, 168, &[v, p]);
+        }
         let flat = self.mesh_thread();
         let z = self.s.m.i32(0);
         // Every primitive of the declared count starts culled, also those
@@ -4954,14 +5128,7 @@ impl<'a> Lower<'a> {
             let guard = ((pass + 1) * threads > mesh.max_primitives)
                 .then(|| self.s.m.cmp(self.cur, pred::IULT, index, p));
             let at = self.begin_guarded(guard);
-            self.s.op(
-                self.cur,
-                "emitIndices",
-                Attr::NoUnwind,
-                void,
-                169,
-                &[index, z, z, z],
-            );
+            self.mesh_indices(index, [z, z, z]);
             self.end_guarded(at, &[]);
         }
         Ok(())
@@ -4984,6 +5151,119 @@ impl<'a> Lower<'a> {
         );
         self.flat = Some(f);
         f
+    }
+
+    /// Mesh as compute: dword `n` of the args (the root CBV
+    /// [`super::shader::SLOT_MESH_ARGS`]), read in the entry block.
+    fn mesh_arg(&mut self, n: u32) -> V {
+        let h = self.s.root_cbv_handle(super::shader::SLOT_MESH_ARGS);
+        let entry = self.s.entry;
+        let row = self.s.m.i32(n / 4);
+        let r = self.s.op(
+            entry,
+            "cbufferLoadLegacy.i32",
+            Attr::ReadOnly,
+            self.s.t.cbuf_ret,
+            59,
+            &[h, row],
+        );
+        self.s.m.extract(entry, r, n % 4)
+    }
+
+    /// Mesh as compute: the group's number in the part of the dispatch the host runs, which
+    /// places its outputs.
+    fn mesh_local_group(&mut self) -> V {
+        let Val::I32(g) = self.compute_id("groupId.i32", 94, 0) else {
+            unreachable!()
+        };
+        g
+    }
+
+    /// Mesh as compute: stores the i32 `value` at dword `index` of the output.
+    fn mesh_out(&mut self, index: V, value: V) {
+        let h = self.s.root_uav_handle(super::shader::SLOT_MESH_OUT);
+        let c = self.cur;
+        let k2 = self.s.m.i32(2);
+        let at = self.s.m.bin(c, Bin::Shl, index, k2);
+        let iu = self.s.m.undef(self.s.t.i32);
+        let (mask, align) = (self.s.m.i8(1), self.s.m.i32(4));
+        let void = self.s.t.void;
+        self.s.op(
+            c,
+            "rawBufferStore.i32",
+            Attr::NoUnwind,
+            void,
+            140,
+            &[h, at, iu, value, iu, iu, iu, mask, align],
+        );
+    }
+
+    /// Mesh as compute: the first dword of this group's vertex `v`, or with `primitive` of
+    /// its primitive `v` ([`super::MeshLayout`]).
+    fn mesh_record(&mut self, v: V, primitive: bool) -> V {
+        let mesh = self.s.mesh.expect("mesh");
+        let (max, dwords) = if primitive {
+            (mesh.max_primitives, record_offsets(&self.s.prims, 3).1)
+        } else {
+            (mesh.max_vertices, record_offsets(&self.s.outputs, 0).1)
+        };
+        let g = self.mesh_local_group();
+        let prims = primitive.then(|| self.mesh_arg(super::shader::MESH_ARG_PRIMS));
+        let c = self.cur;
+        let (kmax, kd) = (self.s.m.i32(max), self.s.m.i32(dwords));
+        let n = self.s.m.bin(c, Bin::Mul, g, kmax);
+        let n = self.s.m.bin(c, Bin::Add, n, v);
+        let at = self.s.m.bin(c, Bin::Mul, n, kd);
+        match prims {
+            Some(p) => self.s.m.bin(c, Bin::Add, at, p),
+            None => at,
+        }
+    }
+
+    /// Mesh: primitive `prim`'s three vertices, numbers in the group.
+    fn mesh_indices(&mut self, prim: V, corners: [V; 3]) {
+        if !self.s.mesh_compute {
+            let void = self.s.t.void;
+            let [a, b, c] = corners;
+            self.s.op(
+                self.cur,
+                "emitIndices",
+                Attr::NoUnwind,
+                void,
+                169,
+                &[prim, a, b, c],
+            );
+            return;
+        }
+        let mesh = self.s.mesh.expect("mesh");
+        let at = self.mesh_record(prim, true);
+        let g = self.mesh_local_group();
+        let c = self.cur;
+        let kmax = self.s.m.i32(mesh.max_vertices);
+        let first = self.s.m.bin(c, Bin::Mul, g, kmax);
+        for (k, corner) in corners.into_iter().enumerate() {
+            let c = self.cur;
+            let kk = self.s.m.i32(k as u32);
+            let place = self.s.m.bin(c, Bin::Add, at, kk);
+            let vertex = self.s.m.bin(c, Bin::Add, first, corner);
+            self.mesh_out(place, vertex);
+        }
+    }
+
+    /// Mesh as compute: where the program's exports went ([`super::MeshLayout`]).
+    fn mesh_layout(&self) -> super::MeshLayout {
+        let mesh = self.s.mesh.expect("mesh");
+        let (vertex_at, vertex_dwords) = record_offsets(&self.s.outputs, 0);
+        let (primitive_at, primitive_dwords) = record_offsets(&self.s.prims, 3);
+        super::MeshLayout {
+            threads: self.s.threads.map_or(0, |t| t[0]),
+            max_vertices: mesh.max_vertices,
+            max_primitives: mesh.max_primitives,
+            vertex_dwords,
+            primitive_dwords,
+            vertex_outputs: self.s.outputs.iter().cloned().zip(vertex_at).collect(),
+            primitive_outputs: self.s.prims.iter().cloned().zip(primitive_at).collect(),
+        }
     }
 
     /// The console wave size.
@@ -12656,6 +12936,17 @@ impl<'a> Lower<'a> {
                     .op(c, "legacyF16ToF32", Attr::ReadNone, f32t, 131, &[x]);
                 x = self.as_int(f);
             }
+            if self.s.mesh_compute {
+                let first = if primitive { 3 } else { 0 };
+                let (offsets, _) = record_offsets(elements(self, primitive), first);
+                elements(self, primitive)[id].usage |= 1 << col;
+                let flat = self.mesh_thread();
+                let record = self.mesh_record(flat, primitive);
+                let k = self.s.m.i32(offsets[id] + u32::from(col));
+                let place = self.s.m.bin(self.cur, Bin::Add, record, k);
+                self.mesh_out(place, x);
+                continue;
+            }
             let el = &mut elements(self, primitive)[id];
             el.usage |= 1 << col;
             let (suffix, x) = match el.comp {
@@ -12739,13 +13030,8 @@ impl<'a> Lower<'a> {
             }
             *slot = i;
         }
-        let mut args = vec![flat];
-        for i in indices {
-            args.push(self.s.m.select(c, culled, z, i));
-        }
-        let void = self.s.t.void;
-        self.s
-            .op(c, "emitIndices", Attr::NoUnwind, void, 169, &args);
+        let corners = indices.map(|i| self.s.m.select(c, culled, z, i));
+        self.mesh_indices(flat, corners);
         self.end_guarded(at, &[]);
         Ok(())
     }

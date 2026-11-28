@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 pub mod census;
+pub(crate) mod halves;
 pub mod opt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -384,6 +385,11 @@ impl Module {
         {
             self.tags.insert(i, tag);
         }
+    }
+
+    /// How many instructions the module has made so far (the next one's number).
+    pub fn inst_count(&self) -> u32 {
+        self.insts.len() as u32
     }
 
     pub fn new_block(&mut self) -> usize {

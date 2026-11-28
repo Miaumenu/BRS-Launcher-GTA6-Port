@@ -61,6 +61,32 @@ pub const SLOT_STRIDES_COUNT: u32 = 1 << 21;
 pub const SLOT_MEMORY: u8 = 254;
 /// See [`SLOT_MEMORY`].
 pub const SLOT_FAULTS: u8 = 253;
+/// A mesh program translated as compute (`super::translate_mesh_as_compute`) writes what the
+/// mesh stage would export into the root UAV `u<SLOT_MESH_OUT>` in [`ROOT_CBV_SPACE`]: the
+/// vertices of the dispatch's groups, then from [`MESH_ARG_PRIMS`] on their primitives
+/// ([`super::MeshLayout`]).
+pub const SLOT_MESH_OUT: u8 = 251;
+/// The root CBV `b<SLOT_MESH_ARGS>` in [`ROOT_CBV_SPACE`] of a mesh program translated as
+/// compute: dword [`MESH_ARG_GROUP`] is added to the host's group number (a dispatch the host
+/// runs in parts), dword [`MESH_ARG_PRIMS`] is where the primitives start in the output, in
+/// dwords.
+pub const SLOT_MESH_ARGS: u8 = 250;
+/// See [`SLOT_MESH_ARGS`].
+pub const MESH_ARG_GROUP: u32 = 0;
+/// See [`SLOT_MESH_ARGS`].
+pub const MESH_ARG_PRIMS: u32 = 1;
+/// Dwords of the [`SLOT_MESH_ARGS`] buffer: the host binds them as root constants.
+pub const MESH_ARG_DWORDS: u32 = 4;
+
+/// The size a root CBV of `slot` is declared with: the title's are as large as any, the
+/// mesh args as large as they are (root constants must cover the declared size).
+fn root_cbv_bytes(slot: u8) -> u32 {
+    if slot == SLOT_MESH_ARGS {
+        MESH_ARG_DWORDS * 4
+    } else {
+        65536
+    }
+}
 /// Entries of the [`SLOT_MEMORY`] directory: title addresses below 128 GiB.
 pub const MEMORY_PAGES: u32 = 1 << 21;
 /// In a directory entry's first dword: shaders do not store there by address
@@ -99,6 +125,13 @@ pub const USER_ROOT_ADDRESS: u32 = 0x104;
 /// the group's width. Asked for by the structure builder's programs
 /// ([`crate::spill::is_spilled`]).
 pub const USER_DISPATCH_THREADS_X: u32 = 0x106;
+/// `RootType::Other` code of a user-data dword the host sets at a dispatch of a program
+/// translated with two of the console's 32-thread groups in each host group of 64
+/// (`GAMBIARRA_MERGE_WAVE32`, [`super::merge_wave32`]): the title's own group count along
+/// X, the host dispatching `(count + 1) / 2` groups there. 0 (what a host that does not
+/// know the word leaves): the dispatch is the title's own, one console group per host
+/// group, in the lower 32 lanes.
+pub const USER_MERGED_GROUPS_X: u32 = 0x107;
 
 /// `ShaderFlags` bits (metadata) and their `SFI0` feature bits.
 pub(crate) mod flags {
@@ -208,6 +241,9 @@ pub(crate) struct Shader {
     pub prims: Vec<SigElement>,
     /// A mesh shader (`threads` is its thread-group size).
     pub mesh: Option<Mesh>,
+    /// The mesh program is emitted as a compute program: its exports are stores into
+    /// [`SLOT_MESH_OUT`], and it finishes with no signatures.
+    pub mesh_compute: bool,
     /// A geometry shader (the rectangle stage, `rect.rs`); `pixel` is false.
     pub geometry: Option<Geometry>,
     /// Dwords of user data the shader reads (0: no user-data buffer).
@@ -277,6 +313,7 @@ impl Shader {
             outputs: Vec::new(),
             prims: Vec::new(),
             mesh: None,
+            mesh_compute: false,
             geometry: None,
             user_data: 0,
             samplers: 0,
@@ -372,7 +409,7 @@ impl Shader {
             217,
             &[bind, r, f],
         );
-        let h = self.annotate(block, h, 13, 65536);
+        let h = self.annotate(block, h, 13, root_cbv_bytes(slot));
         self.root_cbvs.push((slot, h));
         h
     }
@@ -552,6 +589,12 @@ impl Shader {
 
     /// The finished container.
     pub fn finish(mut self) -> Vec<u8> {
+        if self.mesh_compute {
+            self.mesh = None;
+            self.outputs.clear();
+            self.prims.clear();
+            self.inputs.clear();
+        }
         if self.pixel {
             // Reading a per-vertex value with attributeAtVertex needs a
             // constant input, even when the source declaration was smooth.
@@ -655,7 +698,7 @@ impl Shader {
                     Some(i32c(&mut self, ROOT_CBV_SPACE)),
                     Some(i32c(&mut self, u32::from(slot))),
                     Some(i32c(&mut self, 1)),
-                    Some(i32c(&mut self, 65536)),
+                    Some(i32c(&mut self, root_cbv_bytes(slot))),
                     None,
                 ];
                 cbv_list.push(Some(self.m.md_node(ops)));
