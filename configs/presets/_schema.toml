@@ -79,8 +79,18 @@ casar com qualquer host, então não o deixe vazio num preset real.
 # Carrega níveis de mipmap conforme a necessidade. (GAMBIARRA_LEVELS_ON_DEMAND)
 # levels_on_demand = true
 
-# windowed | borderless | exclusive. (GAMBIARRA_DISPLAY_MODE)
-# display_mode = "borderless"
+# Tamanho da TV que o console informa ao título, "<largura>x<altura>" (de
+# 640x360 a 7680x4320). O título renderiza e faz o upscale para ela: numa placa
+# fraca, um tamanho menor corta trabalho de GPU e memória. Sem o campo: 3840x2160.
+# (GAMBIARRA_DISPLAY_MODE)
+# display_size = "1280x720"
+
+# Tamanho em que o título renderiza por dentro, "<largura>x<altura>" (de
+# 640x360 a 1920x1080, múltiplos de 8). Sem o campo o título escolhe 1920x1080
+# sozinho, seja qual for display_size. O loader troca a tabela de modos do
+# título e desarma duas checagens que só existem nesse caminho; só vale para a
+# build cujos bytes foram lidos (em outra, avisa e não mexe). (GAMBIARRA_RENDER_SIZE)
+# render_size = "1280x720"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # [measured] — a evidência. É isto que separa preset de chute.

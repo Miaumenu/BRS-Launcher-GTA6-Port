@@ -197,22 +197,77 @@ pub struct Run {
     pub console: Option<Console>,
 }
 
-/// How the display is presented.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DisplayMode {
-    Windowed,
-    Borderless,
-    Exclusive,
+/// The display the console reports to the title, `"<width>x<height>"`: as a
+/// console plugged into a television of that size, the title renders and
+/// upscales for it. The runtime takes 640x360 up to 7680x4320.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplaySize {
+    pub width: u32,
+    pub height: u32,
 }
 
-impl fmt::Display for DisplayMode {
+impl<'de> Deserialize<'de> for DisplaySize {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        let parsed = text.trim().split_once(['x', 'X']).and_then(|(w, h)| {
+            Some(DisplaySize {
+                width: w.trim().parse().ok()?,
+                height: h.trim().parse().ok()?,
+            })
+        });
+        match parsed {
+            Some(s) if (640..=7680).contains(&s.width) && (360..=4320).contains(&s.height) => Ok(s),
+            _ => Err(serde::de::Error::custom(format!(
+                "display_size {text:?}: expected <width>x<height> between 640x360 and 7680x4320"
+            ))),
+        }
+    }
+}
+
+impl fmt::Display for DisplaySize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Windowed => "windowed",
-            Self::Borderless => "borderless",
-            Self::Exclusive => "exclusive",
-        })
+        write!(f, "{}x{}", self.width, self.height)
+    }
+}
+
+/// The size the title renders at inside, `"<width>x<height>"`, below the
+/// 1920x1080 it picks on its own (`GAMBIARRA_RENDER_SIZE`). The runtime takes
+/// 640x360 up to 1920x1080, both multiples of 8, and only on the one build
+/// its patches were read from (else it says so and leaves the title as is).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl<'de> Deserialize<'de> for RenderSize {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        let parsed = text.trim().split_once(['x', 'X']).and_then(|(w, h)| {
+            Some(RenderSize {
+                width: w.trim().parse().ok()?,
+                height: h.trim().parse().ok()?,
+            })
+        });
+        match parsed {
+            Some(s)
+                if (640..=1920).contains(&s.width)
+                    && (360..=1080).contains(&s.height)
+                    && s.width.is_multiple_of(8)
+                    && s.height.is_multiple_of(8) =>
+            {
+                Ok(s)
+            }
+            _ => Err(serde::de::Error::custom(format!(
+                "render_size {text:?}: expected <width>x<height> between 640x360 and 1920x1080, multiples of 8"
+            ))),
+        }
+    }
+}
+
+impl fmt::Display for RenderSize {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x{}", self.width, self.height)
     }
 }
 
@@ -236,8 +291,10 @@ pub struct Tuning {
     pub texture_budget_mb: Option<u32>,
     /// `GAMBIARRA_LEVELS_ON_DEMAND`.
     pub levels_on_demand: Option<bool>,
-    /// `GAMBIARRA_DISPLAY_MODE`.
-    pub display_mode: Option<DisplayMode>,
+    /// `GAMBIARRA_DISPLAY_MODE` (the reported display's size; unset: 3840x2160).
+    pub display_size: Option<DisplaySize>,
+    /// `GAMBIARRA_RENDER_SIZE` (the size rendered at inside; unset: the title's own).
+    pub render_size: Option<RenderSize>,
 }
 
 impl Tuning {
@@ -259,8 +316,11 @@ impl Tuning {
         if let Some(v) = self.levels_on_demand {
             out.insert("GAMBIARRA_LEVELS_ON_DEMAND", u8::from(v).to_string());
         }
-        if let Some(v) = self.display_mode {
+        if let Some(v) = self.display_size {
             out.insert("GAMBIARRA_DISPLAY_MODE", v.to_string());
+        }
+        if let Some(v) = self.render_size {
+            out.insert("GAMBIARRA_RENDER_SIZE", v.to_string());
         }
         out
     }
@@ -687,16 +747,52 @@ mod tests {
         let tuning = Tuning {
             ambient: Some(1.0),
             bvh_builder: Some(false),
-            display_mode: Some(DisplayMode::Borderless),
+            display_size: Some(DisplaySize {
+                width: 1280,
+                height: 720,
+            }),
             ..Default::default()
         };
         let env = tuning.env();
         assert_eq!(env["GAMBIARRA_AMBIENT"], "1");
         assert_eq!(env["GAMBIARRA_BVH_BUILDER"], "0");
-        assert_eq!(env["GAMBIARRA_DISPLAY_MODE"], "borderless");
+        // The size the display side reads (`gambiarra_gpu::dxgi`), not a window mode.
+        assert_eq!(env["GAMBIARRA_DISPLAY_MODE"], "1280x720");
         // Nothing is invented for the fields that were not set.
         assert!(!env.contains_key("GAMBIARRA_TEXTURE_BUDGET_MB"));
         assert_eq!(Tuning::default().env().len(), 0);
+    }
+
+    /// A render size the loader would not take is refused when the preset is read.
+    #[test]
+    fn a_render_size_must_be_one_the_loader_takes() {
+        let with = |size: &str| {
+            let text =
+                format!("[preset]\nid = \"x\"\nname = \"X\"\n[tuning]\nrender_size = \"{size}\"\n");
+            Preset::parse(&text, Some("x"))
+        };
+        let tuning = with("1280x720").unwrap().tuning;
+        assert_eq!(tuning.env()["GAMBIARRA_RENDER_SIZE"], "1280x720");
+        for bad in ["2560x1440", "1281x720", "320x200", "720p"] {
+            assert!(with(bad).is_err(), "{bad} was taken");
+        }
+    }
+
+    /// A display size that the display side would not take is refused when the
+    /// preset is read, not passed on as a value it ignores.
+    #[test]
+    fn a_display_size_must_be_one_the_runtime_takes() {
+        let with = |size: &str| {
+            let text = format!(
+                "[preset]\nid = \"x\"\nname = \"X\"\n[tuning]\ndisplay_size = \"{size}\"\n"
+            );
+            Preset::parse(&text, Some("x"))
+        };
+        let tuning = with("1280x720").unwrap().tuning;
+        assert_eq!(tuning.env()["GAMBIARRA_DISPLAY_MODE"], "1280x720");
+        for bad in ["borderless", "320x200", "1280", "8000x5000"] {
+            assert!(with(bad).is_err(), "{bad} was taken");
+        }
     }
 
     #[test]

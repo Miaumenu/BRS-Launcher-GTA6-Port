@@ -33,10 +33,12 @@ console = "series-s"
 # (docs/fork-ray-tracing.md), e aqui não há orçamento para isso.
 ambient = 1
 bvh_builder = false
-# 2 GB de VRAM: teto de textura abaixo do total, deixando espaço para o resto.
-texture_budget_mb = 1400
+# 2 GB de VRAM: perfil low medido em 28/11/2026 (reports/hardware/estudo-via-amd-rx550.html).
+# Com TV de 1280x720 e 700 MB de textura, a abertura em 3D rodou 300 s sem cair;
+# só com 720p e 1400 MB o driver recusou fechar uma lista por falta de memória (~260 s).
+display_size = "1280x720"
+texture_budget_mb = 700
 levels_on_demand = true
-display_mode = "borderless"
 
 # A evidência. Valores de reports/hardware/rx550-2026-11-27.md e do STATUS
 # preservado em reports/archive/legacy-contributor-workflow/.

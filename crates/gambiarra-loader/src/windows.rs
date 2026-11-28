@@ -83,6 +83,10 @@ pub fn load(prepared: &PreparedImage, dir: &Path) -> Result<LoadedImage> {
     if !loaded.info.is_dll() {
         // SAFETY: just mapped, and no title code has run.
         unsafe { crate::tls::redirect(loaded.base(), &loaded.info) }?;
+        // SAFETY: as above.
+        unsafe { render_size(loaded.base(), loaded.info.size_of_image as usize) };
+        // SAFETY: as above.
+        unsafe { title_patches(loaded.base()) };
     }
     tracing::info!(
         base = format_args!("{:#x}", loaded.base()),
@@ -92,6 +96,195 @@ pub fn load(prepared: &PreparedImage, dir: &Path) -> Result<LoadedImage> {
     );
     crate::threads::mapped(&loaded);
     Ok(loaded)
+}
+
+/// `GAMBIARRA_TITLE_PATCH=<rva>:<old hex>:<new hex>[;...]`: bytes of the
+/// title's code changed in memory before it runs, each only where the old
+/// bytes are found (else the patch is refused and said). An experiment's
+/// tool (a size the title renders at, a check it makes); the image file and
+/// the title's own files are not touched.
+///
+/// # Safety
+/// `base` is the title image just mapped, before any of its code runs.
+unsafe fn title_patches(base: usize) {
+    let Ok(list) = std::env::var("GAMBIARRA_TITLE_PATCH") else {
+        return;
+    };
+    let hex = |s: &str| -> Option<Vec<u8>> {
+        let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+        if s.len() % 2 != 0 {
+            return None;
+        }
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+            .collect()
+    };
+    for entry in list.split(';').filter(|e| !e.trim().is_empty()) {
+        let parts: Vec<&str> = entry.split(':').collect();
+        let parsed = match parts.as_slice() {
+            [rva, old, new] => usize::from_str_radix(rva.trim().trim_start_matches("0x"), 16)
+                .ok()
+                .zip(hex(old))
+                .zip(hex(new))
+                .map(|((r, o), n)| (r, o, n)),
+            _ => None,
+        };
+        let Some((rva, old, new)) = parsed.filter(|(_, o, n)| o.len() == n.len() && !o.is_empty())
+        else {
+            tracing::warn!(
+                entry,
+                "title patch not understood (rva:old:new, as long as each other)"
+            );
+            continue;
+        };
+        // SAFETY: the caller's promise.
+        if unsafe { holds(base, rva, &old) } {
+            // SAFETY: as above, and the old bytes are there.
+            unsafe { write_patch(base, rva, &new) };
+            tracing::info!(
+                rva = format_args!("{rva:#x}"),
+                bytes = new.len(),
+                "title patched (GAMBIARRA_TITLE_PATCH)"
+            );
+        }
+    }
+}
+
+/// Whether the title holds `old` at `rva` (said when not).
+///
+/// # Safety
+/// `base` is the title image just mapped and `rva..rva + old.len()` is inside it.
+unsafe fn holds(base: usize, rva: usize, old: &[u8]) -> bool {
+    // SAFETY: inside the mapped image (the caller's promise); read only.
+    let found = unsafe { std::slice::from_raw_parts((base + rva) as *const u8, old.len()) };
+    if found != old {
+        tracing::warn!(
+            rva = format_args!("{rva:#x}"),
+            found = %found.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "title patch refused: the old bytes are not there"
+        );
+    }
+    found == old
+}
+
+/// Writes `new` over the title's bytes at `rva`.
+///
+/// # Safety
+/// As [`holds`], and no title code runs yet.
+unsafe fn write_patch(base: usize, rva: usize, new: &[u8]) {
+    let at = base + rva;
+    let mut protection = 0;
+    // SAFETY: making our own mapping writable for a moment.
+    if unsafe {
+        VirtualProtect(
+            at as _,
+            new.len(),
+            windows_sys::Win32::System::Memory::PAGE_EXECUTE_READWRITE,
+            &mut protection,
+        )
+    } == 0
+    {
+        tracing::warn!(
+            rva = format_args!("{rva:#x}"),
+            "title patch: VirtualProtect failed"
+        );
+        return;
+    }
+    // SAFETY: writable now; no title code runs yet.
+    unsafe {
+        std::ptr::copy_nonoverlapping(new.as_ptr(), at as *mut u8, new.len());
+        VirtualProtect(at as _, new.len(), protection, &mut protection);
+        windows_sys::Win32::System::Diagnostics::Debug::FlushInstructionCache(
+            windows_sys::Win32::System::Threading::GetCurrentProcess(),
+            at as _,
+            new.len(),
+        );
+    }
+}
+
+/// `GAMBIARRA_RENDER_SIZE=WxH` (640x360 to 1920x1080, multiples of 8): the
+/// size the title renders at inside, below the 1920x1080 it picks on its own.
+/// Off unless set. Only for the one build these bytes were read from
+/// (`game_scarlett_master.exe`); on another, nothing is written and that is said.
+///
+/// The title picks the entry of its display-mode table nearest to 1920x1080
+/// (`.rdata` +0x615C0C0: 1280x720, 1664x936, 1920x1080, 2560x1440,
+/// 3840x2160, each `w, h, 60, 1`), so every entry becomes `WxH`. Two checks
+/// follow from rendering smaller, and both are made safe:
+/// - +0x247AF2B: a 64 MB arena for the render targets must end with under
+///   2 MB unused, else `int3`; smaller targets leave more unused, which is
+///   harmless, so the `jbe` over the `int3` becomes a `jmp`.
+/// - +0x28F03E8: below its output size the title runs its upscaler's path,
+///   which steps a jitter phase `frame % count`; the count is set by the
+///   console upscaler DLL, which the host refuses, so it stays 0 (a divide
+///   by zero). The divide becomes `frame & 7`: 8 phases, what FSR 2's
+///   `8 * (output / render)^2` gives at an even scale.
+///
+/// # Safety
+/// `base` is the title image just mapped, before any of its code runs.
+unsafe fn render_size(base: usize, image_size: usize) {
+    let Ok(asked) = std::env::var("GAMBIARRA_RENDER_SIZE") else {
+        return;
+    };
+    let size = asked
+        .trim()
+        .split_once(['x', 'X'])
+        .and_then(|(w, h)| Some((w.trim().parse::<u32>().ok()?, h.trim().parse::<u32>().ok()?)));
+    let Some((w, h)) = size.filter(|&(w, h)| {
+        (640..=1920).contains(&w)
+            && (360..=1080).contains(&h)
+            && w.is_multiple_of(8)
+            && h.is_multiple_of(8)
+    }) else {
+        tracing::warn!(
+            asked,
+            "GAMBIARRA_RENDER_SIZE not taken (WxH, 640x360 to 1920x1080, multiples of 8)"
+        );
+        return;
+    };
+    let pair = |w: u32, h: u32| [w.to_le_bytes(), h.to_le_bytes()].concat();
+    let mut patches: Vec<(usize, Vec<u8>, Vec<u8>)> = [
+        (1280, 720),
+        (1664, 936),
+        (1920, 1080),
+        (2560, 1440),
+        (3840, 2160),
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, &(ow, oh))| (0x615_c0c0 + i * 16, pair(ow, oh), pair(w, h)))
+    .collect();
+    patches.push((0x247_af2b, vec![0x76, 0x01, 0xcc], vec![0xeb, 0x01, 0xcc]));
+    // div dword ptr [rdi+0x10c] -> and eax, 7; mov edx, eax; nop
+    patches.push((
+        0x28f_03e8,
+        vec![0xf7, 0xb7, 0x0c, 0x01, 0x00, 0x00],
+        vec![0x83, 0xe0, 0x07, 0x89, 0xc2, 0x90],
+    ));
+    // All or nothing: half of these would leave the title asserting.
+    // SAFETY: the caller's promise; each range is checked to be inside the
+    // image first, and `holds` only reads.
+    if !patches
+        .iter()
+        .all(|(rva, old, _)| rva + old.len() <= image_size && unsafe { holds(base, *rva, old) })
+    {
+        tracing::warn!(
+            w,
+            h,
+            "GAMBIARRA_RENDER_SIZE not applied: not the build its bytes were read from"
+        );
+        return;
+    }
+    for (rva, _, new) in &patches {
+        // SAFETY: as above; the old bytes were all found.
+        unsafe { write_patch(base, *rva, new) };
+    }
+    tracing::info!(
+        w,
+        h,
+        "title renders at this size inside (GAMBIARRA_RENDER_SIZE)"
+    );
 }
 
 /// Maps the DLLs the title ships in `title_dir` that `main` imports,

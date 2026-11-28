@@ -1,0 +1,36 @@
+# AMD RDNA2 (RX 6000) e RDNA3 (RX 7000) — mesh shaders, sem ray tracing dedicado
+# em RDNA2 (DXR Tier 1.1 via driver), RDNA3 é DXR Tier 1.1 nativo.
+#
+# Primeiro preset medido com mesh shaders: se drawn > 0 aqui, o título roda.
+
+[preset]
+id = "amd-rdna2"
+name = "AMD RDNA2/RDNA3 — mesh shaders, DXR"
+summary = """
+Placa RDNA2 ou RDNA3. Tem a unidade de mesh shader (VK_EXT_mesh_shader /
+D3D12MeshShaderTier::Tier1) e DXR Tier 1.1. Os 35% de mesh shaders do título
+devem executar. Preset marcado para validação — preencher [measured] com
+os dados reais da primeira corrida.
+"""
+
+[match]
+vendor = "amd"
+mesh_shader = true
+shader_model_max = "6.6"
+
+[run]
+console = "series-x"
+
+[tuning]
+# Sem limitação de VRAM — ajustar após medir.
+# bvh_builder = true  # habilitar se ray tracing funcionar
+
+# Preencher após a primeira corrida:
+# [measured]
+# gpu = "Radeon RX 6600 XT"
+# vram_mb = 8192
+# driver = "AMD 31.0.xxx"
+# os = "Windows 10.0.xxxxx"
+# stage_reached = "world"   # ou "loading-art" se ainda não renderizar
+# fps = 30                  # só preencher se stage_reached = "world"
+# date = "2026-xx-xx"
