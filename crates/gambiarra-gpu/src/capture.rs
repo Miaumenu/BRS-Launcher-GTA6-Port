@@ -376,8 +376,94 @@ fn dump_on() -> bool {
     *ON.get_or_init(|| folder().is_some() && crate::switch::on("GAMBIARRA_DUMP_TARGETS"))
 }
 
+/// `GAMBIARRA_PRESENT_TARGET=<width>x<height>:<format>[:<n>]`: presents the
+/// `n`-th (in first-use order, 0 by default) texture of that size and DXGI
+/// format the frame renders to or writes, in place of what the title
+/// presents, to see a pass the final image does not show (the G-buffer
+/// while the lit picture is still black). The title's overlay plane is left
+/// out. Frames without such a texture show the last one found, if any, else
+/// the title's image. Only formats a swap chain takes are shown (8-bit
+/// RGBA/BGRA, 10:10:10:2, 16-bit float RGBA); others log "cannot present
+/// this format": `GAMBIARRA_DUMP_TARGETS` saves those.
+/// After Belobug/VIctory-Belobug-AMD (capture.rs, `VICTORY_PRESENT_TARGET`,
+/// GPL-3.0-or-later). Here the last texture found is kept, since with thin
+/// lists (`crate::list::thin`) a frame's draws may be noted after its
+/// present.
+fn present_spec() -> Option<(u64, u32, i32, usize)> {
+    static SPEC: std::sync::OnceLock<Option<(u64, u32, i32, usize)>> = std::sync::OnceLock::new();
+    *SPEC.get_or_init(|| {
+        let v = std::env::var("GAMBIARRA_PRESENT_TARGET").ok()?;
+        let spec = parse_present_spec(&v);
+        match spec {
+            Some(spec) => tracing::info!(?spec, "presenting a render target in place of the title's image"),
+            None => tracing::warn!(value = %v, "GAMBIARRA_PRESENT_TARGET: expected <width>x<height>:<format>[:<n>]"),
+        }
+        spec
+    })
+}
+
+fn parse_present_spec(v: &str) -> Option<(u64, u32, i32, usize)> {
+    let mut parts = v.split(':');
+    let (w, h) = parts.next()?.split_once('x')?;
+    let format = parts.next()?.trim().parse().ok()?;
+    let n = parts.next().map_or(Some(0), |n| n.trim().parse().ok())?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?, format, n))
+}
+
+/// The frame being built and the textures it used that match
+/// [`present_spec`], in first-use order; and the last one shown.
+#[allow(clippy::type_complexity)]
+static PRESENTED: std::sync::Mutex<(
+    u64,
+    Vec<(usize, std::sync::Arc<crate::resource::HostTexture>)>,
+    Option<std::sync::Arc<crate::resource::HostTexture>>,
+)> = std::sync::Mutex::new((0, Vec::new(), None));
+
+fn note_present(resource: crate::object::This) {
+    let Some((w, h, format, _)) = present_spec() else {
+        return;
+    };
+    let Some(copy) = crate::resource::host_copy(resource) else {
+        return;
+    };
+    // SAFETY: a live resource.
+    let d = unsafe { copy.texture.GetDesc() };
+    if (d.Width, d.Height, d.Format.0) != (w, h, format)
+        || d.SampleDesc.Count > 1
+        || d.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D
+    {
+        return;
+    }
+    let frame = crate::queue::presented() + 1;
+    let mut p = PRESENTED.lock().unwrap_or_else(|e| e.into_inner());
+    if p.0 != frame {
+        p.0 = frame;
+        p.1.clear();
+    }
+    if !p.1.iter().any(|&(r, _)| r == resource as usize) {
+        p.1.push((resource as usize, copy));
+    }
+}
+
+/// At the present of `frame`: the texture to show in place of the title's,
+/// if [`present_spec`] is set and named one this frame or before.
+pub(crate) fn present_override(frame: u64) -> Option<std::sync::Arc<crate::resource::HostTexture>> {
+    let (.., n) = present_spec()?;
+    let mut p = PRESENTED.lock().unwrap_or_else(|e| e.into_inner());
+    if p.0 == frame {
+        let found = std::mem::take(&mut p.1).into_iter().nth(n).map(|(_, t)| t);
+        if found.is_some() {
+            p.2 = found;
+        }
+    }
+    p.2.clone()
+}
+
 /// Notes a title texture the frame being built renders to or writes.
 pub(crate) fn note_target(resource: crate::object::This) {
+    if !resource.is_null() {
+        note_present(resource);
+    }
     if resource.is_null() || !dump_on() || !listed(crate::queue::presented() + 1) {
         return;
     }
@@ -931,6 +1017,14 @@ mod tests {
     #[test]
     fn crc_matches_the_png_check_value() {
         assert_eq!(super::crc32(b"IEND"), 0xae42_6082);
+    }
+
+    #[test]
+    fn present_target_specs() {
+        assert_eq!(super::parse_present_spec("1920x1080:10"), Some((1920, 1080, 10, 0)));
+        assert_eq!(super::parse_present_spec("854x480:28:2"), Some((854, 480, 28, 2)));
+        assert_eq!(super::parse_present_spec("1920x1080"), None);
+        assert_eq!(super::parse_present_spec("wide:10"), None);
     }
 
     /// R16G16B16A16_UNORM is integers, not half floats; 89 is 10:10:10:2,

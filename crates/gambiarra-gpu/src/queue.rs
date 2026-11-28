@@ -990,6 +990,25 @@ extern "system" fn present(
             crate::capture::dump_targets(frame);
         }
     }
+    // Diagnostics (`GAMBIARRA_PRESENT_TARGET`): a render target of the frame
+    // shown in place of the title's image (after Belobug/VIctory-Belobug-AMD).
+    #[cfg(all(windows, feature = "diagnostics"))]
+    if let Some(target) = crate::capture::present_override(frame) {
+        let shown = Shown { frame, resource: 0 };
+        if behind::on() && !this.is_null() {
+            // The state it is in when its turn in the line comes.
+            behind::present(this, Some((target, u32::MAX)), None, shown);
+        } else {
+            let state = crate::host::legal_state(
+                &target.texture,
+                target.state.load(std::sync::atomic::Ordering::Relaxed),
+            );
+            show_planes(&target.texture, state, None, shown);
+        }
+        called.end();
+        frame_ends();
+        return S_OK;
+    }
     #[cfg(windows)]
     if behind::on() && !this.is_null() {
         const COPY_SOURCE: u32 = 0x800;

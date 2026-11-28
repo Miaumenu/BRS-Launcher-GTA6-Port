@@ -273,15 +273,26 @@ extern "system" fn check_feature_support(
     const FEATURE_LEVELS: u32 = 2;
     const FORMAT_SUPPORT: u32 = 3;
     const MULTISAMPLE: u32 = 4;
+    // D3D12_FEATURE_DATA_D3D12_OPTIONS5: BOOL + RenderPassTier + RaytracingTier (3×u32 = 12 bytes)
+    const OPTIONS5: u32 = 27;
     let expected = match feature {
         OPTIONS_QUERY => size_of_val(&OPTIONS),
         ARCHITECTURE => 16,
         FEATURE_LEVELS => size_of::<FeatureLevels>(),
         FORMAT_SUPPORT => 12,
         MULTISAMPLE => 16,
+        OPTIONS5 => 12,
         _ => {
-            tracing::warn!(feature, size, "device feature query not implemented");
-            return E_NOTIMPL;
+            // Unknown feature: zero the caller's buffer and return S_OK.
+            // E_NOTIMPL triggers ASSERT(SUCCEEDED(hr)) in the game's System Init.
+            if !data.is_null() && size > 0 {
+                // SAFETY: the game passes a valid buffer of `size` bytes.
+                unsafe {
+                    std::slice::from_raw_parts_mut(data.cast::<u8>(), size as usize).fill(0)
+                };
+            }
+            tracing::debug!(feature, size, "device feature query: zeroed S_OK fallback");
+            return S_OK;
         }
     };
     if data.is_null() || size as usize != expected {
@@ -320,6 +331,13 @@ extern "system" fn check_feature_support(
             q[3] = u32::from(matches!(q[1], 1 | 2 | 4 | 8));
             S_OK
         }
+        OPTIONS5 => {
+            // D3D12_FEATURE_DATA_D3D12_OPTIONS5: all zero = RaytracingTier NOT_SUPPORTED.
+            // Forces the game to use the SSAO fallback instead of hardware RT.
+            // SAFETY: checked size (12) and non-null.
+            unsafe { std::slice::from_raw_parts_mut(data.cast::<u8>(), 12).fill(0) };
+            S_OK
+        }
         _ => feature_levels(data),
     }
 }
@@ -346,54 +364,109 @@ fn feature_levels(data: *mut c_void) -> HRESULT {
     }
 }
 
-/// Device methods 0x1c8 and 0x218 (`SLOT`). The title calls both
-/// (title+0x2477578 and title+0x24800d5) as `(this, description, interface
-/// id, out)`, asks for `ID3D12PipelineState`, and on success keeps the
-/// object `out` names and draws with it; on failure it goes without that
-/// pipeline, silently. What the descriptions hold is not known: the calls
-/// fail as they always did, with `out` null, and the first ones log the
-/// description's words and what its first word points at, so that the two
-/// methods can be written.
-/// shortcut: not implemented. Answering `S_OK` here without making the
-/// pipeline would hand the title whatever its stack held as an object.
-extern "system" fn unknown_pipeline<const SLOT: usize>(
+/// Reads 128 bytes at `at` via the kernel bridge; returns 16 little-endian
+/// 64-bit words, or `None` if `at` is null or the read fails.
+#[cfg(windows)]
+fn read_words(at: usize) -> Option<Vec<u64>> {
+    let mut bytes = [0u8; 128];
+    (at != 0 && crate::host::read_into(at as *const u8, &mut bytes)).then(|| {
+        bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| c.iter().rev().fold(0u64, |v, &b| v << 8 | u64::from(b)))
+            .collect()
+    })
+}
+
+/// Writes raw `desc` bytes to `$GAMBIARRA_PSO_DUMP_DIR/<name>-<n>.bin` when
+/// that env var is set; silently does nothing on any error.
+fn maybe_dump_pso_desc(name: &str, calls: u32, desc: *const u8) {
+    let dir = match std::env::var_os("GAMBIARRA_PSO_DUMP_DIR") {
+        Some(d) => std::path::PathBuf::from(d),
+        None => return,
+    };
+    let mut bytes = [0u8; 128];
+    #[cfg(windows)]
+    if !crate::host::read_into(desc, &mut bytes) {
+        return;
+    }
+    #[cfg(not(windows))]
+    let _ = desc;
+    let path = dir.join(format!("{name}-{calls:04}.bin"));
+    let _ = std::fs::write(path, &bytes);
+}
+
+/// Device slot 0x1c8 (vtable index 57): `DeserializeComputePipelineStateX`.
+/// Called by the title (title+0x2477578) with a console-driver PSO cache blob.
+/// Console driver format is not portable; the title handles E_NOTIMPL by
+/// recreating the pipeline from its in-memory description instead.
+/// Set `GAMBIARRA_PSO_DUMP_DIR=<path>` to dump the first 128 bytes of each
+/// description blob for offline analysis.
+extern "system" fn deserialize_compute_pso_x(
     _: This,
     desc: *const u8,
     _iid: *const Iid,
     out: *mut This,
 ) -> HRESULT {
     use std::sync::atomic::{AtomicU32, Ordering};
-    static CALLS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
-    let calls = CALLS[usize::from(SLOT == 0x218)].fetch_add(1, Ordering::Relaxed) + 1;
-    if !out.is_null() {
-        // SAFETY: the title's out pointer (a local of its own).
-        unsafe { *out = std::ptr::null() };
-    }
+    static CALLS: AtomicU32 = AtomicU32::new(0);
+    let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
+    // Do NOT touch *out: during System Init the caller passes a valid non-null
+    // PSO and asserts it is still non-null after E_NOTIMPL.
+    let _ = out;
+    maybe_dump_pso_desc("compute", calls, desc);
     if calls <= 4 || calls.is_power_of_two() {
-        // Sixteen 64-bit words at `at`, read through the kernel: neither
-        // pointer is known to be mapped.
         #[cfg(windows)]
-        let words = |at: usize| -> Option<Vec<u64>> {
-            let mut bytes = [0u8; 128];
-            (at != 0 && crate::host::read_into(at as *const u8, &mut bytes)).then(|| {
-                bytes
-                    .as_chunks::<8>()
-                    .0
-                    .iter()
-                    .map(|c| c.iter().rev().fold(0u64, |v, &b| v << 8 | u64::from(b)))
-                    .collect()
-            })
+        let (description, first) = {
+            let d = read_words(desc as usize);
+            let f = d.as_ref().and_then(|w| read_words(w[0] as usize));
+            (d, f)
         };
         #[cfg(not(windows))]
-        let words = |_: usize| None::<Vec<u64>>;
-        let description = words(desc as usize);
-        let first = description.as_ref().and_then(|w| words(w[0] as usize));
+        let (description, first) = (None::<Vec<u64>>, None::<Vec<u64>>);
         tracing::warn!(
-            slot = format_args!("{:#x}", SLOT),
             calls,
             description = format_args!("{description:x?}"),
             first_points_at = format_args!("{first:x?}"),
-            "a pipeline creation method that is not implemented: the title goes without this pipeline"
+            "DeserializeComputePipelineStateX (0x1c8): console PSO cache not supported; title should recreate from desc"
+        );
+    }
+    E_NOTIMPL
+}
+
+/// Device slot 0x218 (vtable index 67): `DeserializeGraphicsPipelineStateX`.
+/// Called by the title (title+0x24800d5) with a console-driver PSO cache blob.
+/// Console driver format is not portable; the title handles E_NOTIMPL by
+/// recreating the pipeline from its in-memory description instead.
+/// Set `GAMBIARRA_PSO_DUMP_DIR=<path>` to dump the first 128 bytes of each
+/// description blob for offline analysis.
+extern "system" fn deserialize_graphics_pso_x(
+    _: This,
+    desc: *const u8,
+    _iid: *const Iid,
+    out: *mut This,
+) -> HRESULT {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static CALLS: AtomicU32 = AtomicU32::new(0);
+    let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
+    // Do NOT touch *out: same reason as deserialize_compute_pso_x.
+    let _ = out;
+    maybe_dump_pso_desc("graphics", calls, desc);
+    if calls <= 4 || calls.is_power_of_two() {
+        #[cfg(windows)]
+        let (description, first) = {
+            let d = read_words(desc as usize);
+            let f = d.as_ref().and_then(|w| read_words(w[0] as usize));
+            (d, f)
+        };
+        #[cfg(not(windows))]
+        let (description, first) = (None::<Vec<u64>>, None::<Vec<u64>>);
+        tracing::warn!(
+            calls,
+            description = format_args!("{description:x?}"),
+            first_points_at = format_args!("{first:x?}"),
+            "DeserializeGraphicsPipelineStateX (0x218): console PSO cache not supported; title should recreate from desc"
         );
     }
     E_NOTIMPL
@@ -449,10 +522,10 @@ static FUNCTIONS: Table<160> = {
     f[39] = query::create as *const (); // 0x138
     f[41] = signature::create as *const (); // 0x148
     f[48] = queue::create_x as *const (); // 0x180
-    f[57] = unknown_pipeline::<0x1c8> as *const (); // 0x1c8
+    f[57] = deserialize_compute_pso_x as *const (); // 0x1c8 DeserializeComputePipelineStateX
     f[61] = descriptor::create_sampler_x as *const (); // 0x1e8
     f[62] = pipeline::create_compute_x as *const (); // 0x1f0
-    f[67] = unknown_pipeline::<0x218> as *const (); // 0x218
+    f[67] = deserialize_graphics_pso_x as *const (); // 0x218 DeserializeGraphicsPipelineStateX
     f[69] = object::ignore as *const (); // 0x228 debug error filter
     f[70] = descriptor::create_placed_srv as *const (); // 0x230
     f[71] = descriptor::create_placed_uav as *const (); // 0x238

@@ -110,6 +110,8 @@ pub extern "system" fn CreateWindowExW(
     instance: HINSTANCE,
     param: *const c_void,
 ) -> HWND {
+    no_ghost();
+    window_callers(width, height);
     let (x, y, width, height) = fit(parent, x, y, width, height);
     // SAFETY: the title's own arguments, forwarded (the size fitted).
     let hwnd = unsafe {
@@ -119,6 +121,36 @@ pub extern "system" fn CreateWindowExW(
     };
     hook(hwnd);
     hwnd
+}
+
+/// The return addresses the title's window was asked for from, to find the
+/// code that chose its size (the size the title renders at).
+fn window_callers(width: i32, height: i32) {
+    let mut frames = [std::ptr::null_mut::<c_void>(); 16];
+    // SAFETY: room for 16 frames.
+    let n = unsafe {
+        windows_sys::Win32::System::Diagnostics::Debug::RtlCaptureStackBackTrace(
+            0,
+            frames.len() as u32,
+            frames.as_mut_ptr(),
+            std::ptr::null_mut(),
+        )
+    };
+    let callers: Vec<String> = frames[..n as usize]
+        .iter()
+        .map(|f| format!("{:#x}", *f as usize))
+        .collect();
+    tracing::info!(width, height, callers = %callers.join(" "), "title window asked for");
+}
+
+/// The title reads its window's messages between frames. On a slow card a
+/// frame can take seconds, and after five without a read Windows swaps the
+/// window for a white "not responding" ghost, which hides the frames that
+/// are still being shown. The ghost only ever hides them, so it is turned off.
+fn no_ghost() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    // SAFETY: a process-wide switch with no arguments.
+    ONCE.call_once(|| unsafe { wm::DisableProcessWindowsGhosting() });
 }
 
 /// See [`CreateWindowExW`].
@@ -136,6 +168,8 @@ pub extern "system" fn CreateWindowExA(
     instance: HINSTANCE,
     param: *const c_void,
 ) -> HWND {
+    no_ghost();
+    window_callers(width, height);
     let (x, y, width, height) = fit(parent, x, y, width, height);
     // SAFETY: the title's own arguments, forwarded (the size fitted).
     let hwnd = unsafe {

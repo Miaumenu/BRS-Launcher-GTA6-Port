@@ -968,20 +968,45 @@ fn create() -> windows::core::Result<Host> {
                 );
             }
         }
-        let mut device: Option<ID3D12Device> = None;
+        // Load the D3D12 Agility SDK before creating any device.  This upgrades the
+        // process-wide D3D12 state (including D3D12SerializeVersionedRootSignature) so
+        // that SM 6.6 root signature flags (CBV_SRV_UAV / SAMPLER heap-directly-indexed,
+        // 0x400|0x800) are accepted.  Without this, root signatures fail with E_INVALIDARG
+        // on Windows 10 even when the GPU and driver support SM 6.6, because the inbox
+        // System32\D3D12Core.dll does not know about those flags.
+        // See crate::agility for the search paths (GAMBIARRA_D3D12_DIR, exe\D3D12, etc.).
+        {
+            use crate::agility::State;
+            match crate::agility::state() {
+                State::Loaded { version, dir, .. } => {
+                    tracing::info!(version, dir = %dir.display(), "D3D12 Agility SDK active");
+                }
+                State::NotFound => {
+                    tracing::warn!(
+                        "D3D12 Agility SDK not found — root signatures with SM 6.6 heap \
+                         flags will fail (E_INVALIDARG); place D3D12Core.dll in \
+                         target\\diag\\D3D12\\ or set GAMBIARRA_D3D12_DIR"
+                    );
+                }
+                State::Unavailable(reason) => {
+                    tracing::warn!(reason, "D3D12 Agility SDK unavailable");
+                }
+            }
+        }
         // Diagnostics: the software adapter, on which a shader's wild access
         // is an access violation in this process (a crash report with the
         // address and instruction) instead of a GPU fault and driver reset.
-        if cfg!(feature = "diagnostics") && crate::switch::on("GAMBIARRA_D3D12_WARP") {
+        let device = if cfg!(feature = "diagnostics") && crate::switch::on("GAMBIARRA_D3D12_WARP") {
             let adapter = warp_adapter()?;
-            D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device)?;
+            let d = crate::agility::create_device(&adapter, D3D_FEATURE_LEVEL_12_0)?;
             tracing::info!("host device on the software adapter (WARP)");
+            d
         } else {
-            D3D12CreateDevice(None, D3D_FEATURE_LEVEL_12_0, &mut device)?;
+            let d = crate::agility::create_default_device(D3D_FEATURE_LEVEL_12_0)?;
             // Whether a GPU hang ends the run or freezes the PC (#1054).
             crate::tdr::log();
-        }
-        let device = device.ok_or_else(windows::core::Error::empty)?;
+            d
+        };
         // Before anything is made with it (`GAMBIARRA_RECORD`).
         #[cfg(feature = "diagnostics")]
         crate::replay::record::from_env(&device);
@@ -4128,6 +4153,23 @@ pub(crate) fn walls_trace() -> bool {
     })
 }
 
+/// `GAMBIARRA_CLAMP_EXPOSURE=<max>` (off by default): caps the magnitude of
+/// the small exposure/luminance read-backs the title reads back, to <max>.
+/// The metering reads values near 8800 where a lit scene is ~1-10, and the
+/// title's auto-exposure then crushes the image to near-black (AMD study
+/// §5, walls-trace of 28/11). A test of that cause: a cap near 10 should
+/// let the scene show if the black is auto-exposure. The small control
+/// values (a colour matrix, |v| < 1) are left alone.
+fn clamp_exposure() -> Option<f32> {
+    static V: OnceLock<Option<f32>> = OnceLock::new();
+    *V.get_or_init(|| {
+        std::env::var("GAMBIARRA_CLAMP_EXPOSURE")
+            .ok()
+            .and_then(|s| s.trim().parse::<f32>().ok())
+            .filter(|v| *v > 0.0)
+    })
+}
+
 /// After `list` has run: the texels its read-backs copied into host
 /// buffers of ours go to the title's memory (`HostList::defer_read_back`).
 ///
@@ -4155,6 +4197,23 @@ fn read_backs(list: &HostList) {
                         (*at as *mut u8).add(line * pitch),
                         *row,
                     );
+                }
+                // Cap the exposure/luminance read-backs (GAMBIARRA_CLAMP_EXPOSURE):
+                // the title reads these back to drive auto-exposure; a runaway
+                // value crushes the image to black. Only the small float
+                // targets, only magnitudes over the cap (the colour matrix
+                // values are small and stay).
+                if let Some(max) = clamp_exposure()
+                    && *rows == 1
+                    && *row <= 96
+                {
+                    let dst = (*at as *mut f32).cast::<f32>();
+                    for i in 0..(*row / 4) {
+                        let v = dst.add(i).read_unaligned();
+                        if v.is_finite() && v.abs() > max {
+                            dst.add(i).write_unaligned(max.copysign(v));
+                        }
+                    }
                 }
                 // The walls trace: what the title is handed (one row of at
                 // most 24 values: its 5x1 and 1x1 float targets).
@@ -4256,16 +4315,37 @@ fn hand_back(back: &[Declared]) {
 }
 
 impl Host {
+    /// Whether the host can run the translated DXIL, which uses Shader Model
+    /// 6.6 features (including directly indexed descriptor heaps). Logged once.
+    pub(crate) fn shader_model_66(&self) -> bool {
+        static SUPPORTED: OnceLock<bool> = OnceLock::new();
+        *SUPPORTED.get_or_init(|| {
+            let mut model = D3D12_FEATURE_DATA_SHADER_MODEL {
+                HighestShaderModel: D3D_SHADER_MODEL_6_6,
+            };
+            // SAFETY: the feature query writes the structure of the given size.
+            let supported = unsafe {
+                self.device
+                    .CheckFeatureSupport(
+                        D3D12_FEATURE_SHADER_MODEL,
+                        (&raw mut model).cast(),
+                        size_of_val(&model) as u32,
+                    )
+                    .is_ok()
+                    && model.HighestShaderModel.0 >= D3D_SHADER_MODEL_6_6.0
+            };
+            tracing::info!(supported, "host Shader Model 6.6 support");
+            supported
+        })
+    }
+
     /// Whether the host runs mesh shaders at shader model 6.6 (translated
     /// mesh shaders need both); logged once.
     pub(crate) fn mesh_shaders(&self) -> bool {
         static MESH: OnceLock<bool> = OnceLock::new();
         *MESH.get_or_init(|| {
             let mut options = D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
-            let mut model = D3D12_FEATURE_DATA_SHADER_MODEL {
-                HighestShaderModel: D3D_SHADER_MODEL_6_6,
-            };
-            // SAFETY: each query writes its own structure of the given size.
+            // SAFETY: the feature query writes the structure of the given size.
             let ok = unsafe {
                 self.device
                     .CheckFeatureSupport(
@@ -4274,21 +4354,57 @@ impl Host {
                         size_of_val(&options) as u32,
                     )
                     .is_ok()
-                    && self
-                        .device
-                        .CheckFeatureSupport(
-                            D3D12_FEATURE_SHADER_MODEL,
-                            (&raw mut model).cast(),
-                            size_of_val(&model) as u32,
-                        )
-                        .is_ok()
             };
             let mesh = ok
                 && options.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED
-                && model.HighestShaderModel.0 >= D3D_SHADER_MODEL_6_6.0;
+                && self.shader_model_66();
             tracing::info!(mesh, "host mesh shader support");
             mesh
         })
+    }
+
+    /// Whether the host GPU rasterises conservatively (any tier); logged once.
+    pub(crate) fn conservative_raster(&self) -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| {
+            let mut options = D3D12_FEATURE_DATA_D3D12_OPTIONS::default();
+            // SAFETY: the feature query writes the structure of the given size.
+            let ok = unsafe {
+                self.device
+                    .CheckFeatureSupport(
+                        D3D12_FEATURE_D3D12_OPTIONS,
+                        (&raw mut options).cast(),
+                        size_of_val(&options) as u32,
+                    )
+                    .is_ok()
+            };
+            let on = ok
+                && options.ConservativeRasterizationTier
+                    != D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED;
+            tracing::info!(on, "host conservative rasterisation support");
+            on
+        })
+    }
+
+    /// The title's rasteriser state as the host takes it: without conservative
+    /// rasterisation where the host has none (a pipeline asking for it is refused there);
+    /// such draws cover the pixels their triangles' centres do, not every pixel they touch.
+    pub(crate) fn rasterizer(&self, r: D3D12_RASTERIZER_DESC) -> D3D12_RASTERIZER_DESC {
+        if r.ConservativeRaster == D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON
+            && !self.conservative_raster()
+        {
+            static SAID: std::sync::Once = std::sync::Once::new();
+            SAID.call_once(|| {
+                tracing::warn!(
+                    "pipelines that rasterise conservatively draw without it: the host GPU has no conservative rasterisation"
+                )
+            });
+            return D3D12_RASTERIZER_DESC {
+                ConservativeRaster: D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
+                ..r
+            };
+        }
+        r
     }
 
     /// Whether the host GPU supports the depth bounds test; logged once.

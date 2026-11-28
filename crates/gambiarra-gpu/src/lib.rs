@@ -18,6 +18,8 @@
 #[cfg(all(windows, feature = "diagnostics"))]
 mod ab;
 #[cfg(windows)]
+pub mod agility;
+#[cfg(windows)]
 mod ambient;
 #[cfg(all(windows, feature = "diagnostics"))]
 mod book;
@@ -49,7 +51,12 @@ mod inplace;
 mod land;
 pub mod list;
 #[cfg(windows)]
+mod memclass;
 mod memory;
+#[cfg(windows)]
+mod mesh;
+#[cfg(windows)]
+mod neutral;
 pub mod object;
 #[cfg(windows)]
 mod picked;
@@ -113,6 +120,7 @@ pub fn frame_phase() -> u32 {
 pub use inplace::{
     title_memory_freeing, title_memory_section, title_memory_section_gone, title_memory_view,
 };
+pub use memclass::{title_memory_protection, title_memory_protection_gone};
 #[cfg(windows)]
 pub use watch::{
     kernel_writing, title_memory_allocated, title_memory_freed, title_memory_reading,

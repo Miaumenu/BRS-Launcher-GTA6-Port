@@ -993,6 +993,45 @@ fn log_memory() {
         mb(crate::shadow::window_cover()),
         lists[3],
     );
+    // Round 4: the mirrored memory split by the class the title asked for
+    // each region (`crate::memclass`). The write-combined/uncached share is
+    // memory the CPU never reads back, so it could live on the card with no
+    // copy back (AMD study §14-15, Fase 1 de medição).
+    #[cfg(feature = "diagnostics")]
+    {
+        let names = crate::memclass::Class::names();
+        let line = |by: [u64; crate::memclass::Class::COUNT]| -> String {
+            names
+                .iter()
+                .zip(by)
+                .map(|(name, bytes)| format!("{name} {:.0} MB", mb(bytes)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let raw: Vec<String> = crate::memclass::raw_by_class()
+            .into_iter()
+            .take(8)
+            .map(|(class, protect, bytes)| {
+                format!("{protect:#x}→{} {:.0} MB", names[class], mb(bytes))
+            })
+            .collect();
+        tracing::info!(
+            "memory by class (what the title asked each region to be): windows alive — {}; copies on the card — {}; title regions by protection — {}",
+            line(crate::shadow::window_cover_by_class()),
+            line(crate::shadow::carded_by_class()),
+            raw.join(", "),
+        );
+        // The mirrored windows are section memory, so the title's class does
+        // not reach them; split them instead by whether the GPU writes them
+        // (the signal the layer has). The never-written share is read-only
+        // input the card could hold with no copy back (AMD study Fase 1b).
+        let written = crate::shadow::window_cover_by_written();
+        tracing::info!(
+            "memory of windows by what writes them: {:.0} MB read-only input (GPU never writes — could live on the card, no copy back), {:.0} MB the GPU writes (where the copy back lives)",
+            mb(written[0]),
+            mb(written[1]),
+        );
+    }
 }
 
 /// Microseconds since the first call.
@@ -1457,8 +1496,15 @@ pub(crate) fn log(frames: f64) {
         );
     }
     for (what, (n, us, longest)) in by.into_iter().take(40) {
+        // The title's names of its programs, after the hashes.
+        let programs = crate::pipeline::programs_in(&what);
+        let programs = if programs.is_empty() {
+            programs
+        } else {
+            format!(" ({programs})")
+        };
         tracing::info!(
-            "  the card's time by command (timing run): {:.2} ms a frame in {:.1} commands a frame, the longest {:.2} ms: {what}",
+            "  the card's time by command (timing run): {:.2} ms a frame in {:.1} commands a frame, the longest {:.2} ms: {what}{programs}",
             us as f64 / 1e3 / frames,
             n as f64 / frames,
             longest as f64 / 1e3

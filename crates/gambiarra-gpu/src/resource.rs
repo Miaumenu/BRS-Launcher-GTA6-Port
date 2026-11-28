@@ -1307,6 +1307,86 @@ fn base_level(desc: &ResourceDesc, first: u32) -> u32 {
     base
 }
 
+/// The largest side a held texture may keep (`GAMBIARRA_TEXTURE_MAX`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TextureMax {
+    Off,
+    Side(u64),
+    /// By how full the card's memory is: 1024, 512, then 256.
+    Auto,
+}
+
+fn parse_texture_max(set: &str) -> TextureMax {
+    match set.trim() {
+        "auto" => TextureMax::Auto,
+        side => match side.parse::<u64>() {
+            Ok(side) if side >= 4 => TextureMax::Side(side),
+            _ => TextureMax::Off,
+        },
+    }
+}
+
+/// `GAMBIARRA_TEXTURE_MAX=<side>|auto`: a placed block-compressed 2D texture
+/// the title fills is held from the first level whose sides are at most
+/// `<side>` texels; its larger levels are left out, and views that start
+/// above show that level as their first ([`held_only`], whose conditions
+/// apply: off with `GAMBIARRA_HELD_LEVELS=0`). `auto`: 1024 while under 70
+/// percent of the card's budget is in use, 512 under 85, then 256 (only
+/// copies made from then on). Unset or 0: off. For cards whose memory does
+/// not hold the world's textures whole (2 GB). Blurrier textures.
+/// After Belobug/VIctory-Belobug-AMD (resource.rs `over_cap`,
+/// `VICTORY_TEXTURE_MAX`, GPL-3.0-or-later), which caps every streamed
+/// texture by default; here it is asked for.
+#[cfg(windows)]
+fn capped_first(desc: &ResourceDesc) -> u32 {
+    static SET: std::sync::OnceLock<TextureMax> = std::sync::OnceLock::new();
+    let set = *SET.get_or_init(|| {
+        let set = parse_texture_max(&std::env::var("GAMBIARRA_TEXTURE_MAX").unwrap_or_default());
+        if set != TextureMax::Off {
+            tracing::info!(?set, "GAMBIARRA_TEXTURE_MAX: largest levels of placed textures left out");
+        }
+        set
+    });
+    let max = match set {
+        TextureMax::Off => return 0,
+        TextureMax::Side(side) => side,
+        TextureMax::Auto => match card_percent() {
+            0..70 => 1024,
+            70..85 => 512,
+            _ => 256,
+        },
+    };
+    let block = (70..=84).contains(&desc.format) || (94..=99).contains(&desc.format);
+    if !block {
+        return 0;
+    }
+    levels_over(desc.width.max(u64::from(desc.height)), u32::from(desc.mip_levels), max)
+}
+
+/// Of a texture whose largest side is `side`, with `levels` levels: how
+/// many of the largest have a side over `max` (the smallest always kept).
+fn levels_over(side: u64, levels: u32, max: u64) -> u32 {
+    let mut skip = 0;
+    while side >> skip > max && skip + 1 < levels {
+        skip += 1;
+    }
+    skip
+}
+
+/// The card's memory in use, in percent of the budget, looked at every 50 ms.
+#[cfg(windows)]
+fn card_percent() -> u64 {
+    static LAST: std::sync::Mutex<(Option<std::time::Instant>, u64)> = std::sync::Mutex::new((None, 0));
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if last.0.is_none_or(|at| at.elapsed() > std::time::Duration::from_millis(50)) {
+        last.0 = Some(std::time::Instant::now());
+        if let Some([budget, used, ..]) = crate::host::host().and_then(|h| h.video_memory()) {
+            last.1 = used * 100 / budget.max(1);
+        }
+    }
+    last.1
+}
+
 /// The bytes of title memory a placed texture with the resource description
 /// `desc` is read from for a view that starts at level `first`; `None` as
 /// [`placed_bytes`]. Remembered: asked for every slot that is looked at.
@@ -1365,7 +1445,7 @@ pub(crate) fn want_level(this: This, first: u32) {
         r.host.wanted.fetch_min(first, Relaxed);
         return;
     };
-    if host.base == 0 || host.base <= base_level(&r.desc, first) {
+    if host.base == 0 || host.base <= base_level(&r.desc, first.max(capped_first(&r.desc))) {
         return;
     }
     r.host.wanted.store(first, Relaxed);
@@ -1608,7 +1688,10 @@ fn hosted(this: This, make: bool) -> Option<Made> {
             let wanted = r.host.wanted.load(Relaxed);
             let viewed = crate::descriptor::host::first_viewed(r.data() as u64).unwrap_or(u32::MAX);
             let first = wanted.min(viewed);
-            if first != u32::MAX {
+            // (`GAMBIARRA_TEXTURE_MAX`: levels over the cap left out too.)
+            let cap = capped_first(&r.desc);
+            let first = if first == u32::MAX { cap } else { first.max(cap) };
+            if first != 0 {
                 base = base_level(&r.desc, first);
             }
         }
@@ -3452,6 +3535,19 @@ pub(crate) fn test_buffer(width: u64) -> This {
 mod tests {
     use super::*;
     use crate::object::slot;
+
+    #[test]
+    fn texture_max_settings_and_levels() {
+        assert_eq!(parse_texture_max(""), TextureMax::Off);
+        assert_eq!(parse_texture_max("0"), TextureMax::Off);
+        assert_eq!(parse_texture_max(" 512 "), TextureMax::Side(512));
+        assert_eq!(parse_texture_max("auto"), TextureMax::Auto);
+        // 4096 with 13 levels under 1024: the two largest go.
+        assert_eq!(levels_over(4096, 13, 1024), 2);
+        assert_eq!(levels_over(1024, 11, 1024), 0);
+        // The smallest level is always kept.
+        assert_eq!(levels_over(4096, 2, 16), 1);
+    }
 
     #[test]
     fn a8_unorm_is_not_in_the_r8_typeless_family() {

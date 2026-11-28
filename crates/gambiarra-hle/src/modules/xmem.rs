@@ -179,6 +179,10 @@ pub extern "system" fn XMemVirtualAlloc(
     }
     if !at.is_null() && !placeholder {
         gambiarra_gpu::title_memory_allocated(at as usize, size);
+        // Remember the protection so the memory accounting can split the
+        // mirrored windows and card copies by what the title meant each
+        // region to be (`gambiarra_gpu::memclass`, AMD study §14.2).
+        gambiarra_gpu::title_memory_protection(at as usize, size, asked);
     }
     note_protection(asked, kind, flags, at as usize, size);
     at
@@ -2011,6 +2015,7 @@ extern "system" fn title_virtual_free(address: *mut c_void, size: usize, kind: u
     // Splitting and joining placeholders changes nothing they show.
     if kind & (MEM_PRESERVE_PLACEHOLDER | MEM_COALESCE_PLACEHOLDERS) == 0 {
         gambiarra_gpu::title_memory_freed(address as usize, size);
+        gambiarra_gpu::title_memory_protection_gone(address as usize);
     }
     // SAFETY: the title's own arguments.
     unsafe { VirtualFree(address, size, kind) }

@@ -13,6 +13,7 @@
 //! alone, times the executions that read them.
 
 use windows::Win32::Graphics::Direct3D12::*;
+use windows::core::Interface;
 
 use super::{Clamp, uav_barrier};
 use crate::host::transition;
@@ -73,7 +74,8 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
         job = jobs.Load4(16 + id.x * 16);
         kind = (job.x >> 4) & 15;
         words = min((job.x >> 8) & 15, 5);
-        for (uint w = 0; w < words; w++) {
+        // (MERGED_DISPATCH writes four words of a title record of three)
+        for (uint w = 0; w < (kind == 15 ? 3u : words); w++) {
             record[w] = load(job.x & 3, job.y + w * 4);
         }
         if (kind <= 1) {
@@ -83,7 +85,7 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
             }
             record[1] = min(record[1], (1u << 26) / max(record[0], 1u));
             cost = record[0] * record[1];
-        } else if (kind == 2) {
+        } else if (kind == 2 || kind == 15) {
             uint3 g = uint3(record[0], record[1], record[2]);
             g = min(g, uint3(g.x <= WIDEST ? WIDEST : 65535u, 65535u, 65535u));
             if ((g.y != 0 && g.x > GROUPS / g.y) || (g.z != 0 && g.x * g.y > GROUPS / g.z)) {
@@ -93,6 +95,13 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
             record[0] = g.x;
             record[1] = g.y;
             record[2] = g.z;
+            // MERGED_DISPATCH: the title's count in x for a root constant, then the
+            // dispatch of half as many groups there (two of the title's in each)
+            if (kind == 15) {
+                record[1] = (g.x + 1u) / 2u;
+                record[2] = g.y;
+                record[3] = g.z;
+            }
         } else {
             if (record[0] > 65535u) {
                 record[0] = 0;
@@ -108,7 +117,7 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
     }
     costs[gi] = cost;
     GroupMemoryBarrierWithGroupSync();
-    if (active && kind > 2) {
+    if (active && kind > 2 && kind != 15) {
         uint was;
         InterlockedMax(largest_asked, asked, was);
         InterlockedAdd(all_asked, min(asked, 1u << 24), was);
@@ -181,7 +190,73 @@ void main(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex) {
 
 /// The words of a record of `kind` (PC argument numbering).
 pub(crate) fn words(kind: u32) -> Option<u32> {
+    if kind == MERGED_DISPATCH {
+        return Some(4);
+    }
     super::min_stride(kind).map(|bytes| bytes / 4)
+}
+
+/// A job's kind for a dispatch of a program that runs two of the title's thread groups in
+/// each host group (`gambiarra_shader::emit::merge_wave32`): the title's record (x, y, z)
+/// clamped as a dispatch's and written as `[x, (x + 1) / 2, y, z]`, for
+/// [`merged_signature`] (the title's count in x into the program's root constant, then the
+/// dispatch).
+pub(crate) const MERGED_DISPATCH: u32 = 15;
+
+/// The command signature of a [`MERGED_DISPATCH`] record on root signature `root`: one
+/// 32-bit constant into dword `word` of root parameter `param`, then a dispatch; 16 bytes a
+/// record. Made once per root signature and place.
+pub(crate) fn merged_signature(
+    root: &ID3D12RootSignature,
+    param: u32,
+    word: u32,
+) -> Option<ID3D12CommandSignature> {
+    type Made = Vec<((ID3D12RootSignature, u32, u32), ID3D12CommandSignature)>;
+    static MADE: std::sync::Mutex<Made> = std::sync::Mutex::new(Vec::new());
+    let mut made = MADE.lock().unwrap_or_else(|e| e.into_inner());
+    // (the root signature is kept alive here, so its address names no other)
+    if let Some((_, s)) = made
+        .iter()
+        .find(|((r, p, w), _)| r.as_raw() == root.as_raw() && (*p, *w) == (param, word))
+    {
+        return Some(s.clone());
+    }
+    let args = [
+        D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT,
+            Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
+                    RootParameterIndex: param,
+                    DestOffsetIn32BitValues: word,
+                    Num32BitValuesToSet: 1,
+                },
+            },
+        },
+        D3D12_INDIRECT_ARGUMENT_DESC {
+            Type: D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+            ..Default::default()
+        },
+    ];
+    let desc = D3D12_COMMAND_SIGNATURE_DESC {
+        ByteStride: 16,
+        NumArgumentDescs: args.len() as u32,
+        pArgumentDescs: args.as_ptr(),
+        NodeMask: 0,
+    };
+    let mut signature: Option<ID3D12CommandSignature> = None;
+    // SAFETY: a description of live arguments on a live root signature.
+    let result = unsafe {
+        crate::host::host()?
+            .device
+            .CreateCommandSignature(&desc, root, &mut signature)
+    };
+    if let Err(e) = result {
+        tracing::warn!(error = %e, param, word, "command signature for merged dispatches refused");
+        return None;
+    }
+    let signature = signature?;
+    made.push(((root.clone(), param, word), signature.clone()));
+    Some(signature)
 }
 
 /// A job's first word.

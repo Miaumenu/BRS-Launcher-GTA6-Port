@@ -402,6 +402,36 @@ pub(crate) struct HostPipeline {
     /// listing (empty for compute).
     #[cfg_attr(not(feature = "diagnostics"), allow(dead_code))]
     pub(crate) state: String,
+    /// A mesh pipeline on a host without mesh shaders: its mesh program runs as compute and
+    /// this pipeline draws what it stored (`draw::dispatch_mesh`); its stages are the pixel
+    /// stage alone.
+    pub(crate) emulated: Option<Box<Emulated>>,
+}
+
+/// The other half of an emulated mesh pipeline ([`HostPipeline::emulated`]).
+pub(crate) struct Emulated {
+    /// The mesh program as compute, its stage bound with the title's graphics root
+    /// arguments.
+    pub(crate) compute: HostPipeline,
+    pub(crate) layout: gambiarra_shader::emit::MeshLayout,
+    /// The compute pipeline's root parameters of the args (root constants) and the output
+    /// (a root UAV).
+    pub(crate) compute_args: u32,
+    pub(crate) compute_out: u32,
+    /// The drawing pipeline's: the args, and the output as a root SRV.
+    pub(crate) draw_args: u32,
+    pub(crate) draw_out: u32,
+    /// The command signatures of its indirect dispatches (`crate::mesh::signatures`),
+    /// made on first use.
+    pub(crate) signatures: std::sync::OnceLock<Option<(ID3D12CommandSignature, ID3D12CommandSignature)>>,
+}
+
+/// Mesh pipelines on a host without mesh shaders run their mesh programs as compute and
+/// draw what they stored (`GAMBIARRA_MESH_EMULATION=0`: refused, their draws dropped, as
+/// before).
+pub(crate) fn mesh_emulation() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("GAMBIARRA_MESH_EMULATION").is_none_or(|v| v != "0"))
 }
 
 /// Logs a pipeline that gets no host pipeline, once per reason.
@@ -450,7 +480,14 @@ impl HostPipeline {
             stages.extend(find("pixel").map(|ps| (ps, D3D12_SHADER_VISIBILITY_PIXEL)));
             stages
         };
-        if mesh.is_some() && !host()?.mesh_shaders() {
+        let host = host()?;
+        if !host.shader_model_66() {
+            return refuse(
+                "the host GPU does not support Shader Model 6.6 required by translated shaders",
+                shaders,
+            );
+        }
+        if mesh.is_some() && !host.mesh_shaders() && !mesh_emulation() {
             return refuse(
                 "the host GPU has no mesh shaders (or no shader model 6.6)",
                 shaders,
@@ -459,8 +496,6 @@ impl HostPipeline {
         for (s, _) in &stages {
             s.translated()?;
         }
-        let host = host()?;
-
         let mut options = D3D12_FEATURE_DATA_D3D12_OPTIONS19::default();
         // SAFETY: the feature query writes the structure of the given size.
         // Older runtimes may not recognize OPTIONS19; that means no support.
@@ -474,15 +509,55 @@ impl HostPipeline {
         .is_ok()
             && options.AnisoFilterWithPointMipSupported.as_bool();
 
-        // The root signature the translated shaders' bindings define.
-        let mut params: Vec<D3D12_ROOT_PARAMETER1> = Vec::new();
-        // The ranges table parameters point at, alive until the root
-        // signature is made.
-        let mut ranges: Vec<Box<D3D12_DESCRIPTOR_RANGE1>> = Vec::new();
-        let mut samplers = Vec::new();
-        let mut bound = Vec::new();
-        for &(shader, visibility) in &stages {
-            let t = &shader.translated()?.host;
+        if mesh.is_some() && !host.mesh_shaders() {
+            let ps = find("pixel");
+            return emulated_mesh(shaders, stages[0].0, ps, g?, host, aniso_point_mip_supported);
+        }
+        let hosts: Vec<_> = stages
+            .iter()
+            .map(|&(s, v)| Some((s, &s.translated()?.host, v)))
+            .collect::<Option<_>>()?;
+        let Params {
+            params,
+            ranges: _ranges,
+            samplers,
+            bound,
+        } = root_params(&hosts, aniso_point_mip_supported)?;
+        let (root, root_blob) =
+            match root_signature(&host.device, &params, &samplers, compute.is_some()) {
+                Ok(root) => root,
+                Err(e) => {
+                    tracing::warn!(error = %e, ?shaders, "host root signature refused");
+                    return None;
+                }
+            };
+        Self::finish(shaders, compute, mesh, stages, g, host, root, root_blob, bound)
+    }
+}
+
+/// A root signature's parameters for translated stages, the ranges its tables point at
+/// (alive until it is made), its static samplers, and per stage where its bindings went.
+struct Params {
+    params: Vec<D3D12_ROOT_PARAMETER1>,
+    ranges: Vec<Box<D3D12_DESCRIPTOR_RANGE1>>,
+    samplers: Vec<D3D12_STATIC_SAMPLER_DESC>,
+    bound: Vec<Stage>,
+}
+
+/// The root parameters the translated stages' bindings define: per stage, its user data
+/// (root constants), its root views, its immediate samplers. The args of an emulated mesh
+/// dispatch are root constants, its output a root view of ours (`draw::dispatch_mesh`).
+fn root_params(
+    stages: &[(&Arc<Shader>, &gambiarra_shader::emit::HostShader, D3D12_SHADER_VISIBILITY)],
+    aniso_point_mip_supported: bool,
+) -> Option<Params> {
+    use gambiarra_shader::emit::{MESH_ARG_DWORDS, SLOT_MESH_ARGS, SLOT_MESH_OUT};
+    let mut params: Vec<D3D12_ROOT_PARAMETER1> = Vec::new();
+    let mut ranges: Vec<Box<D3D12_DESCRIPTOR_RANGE1>> = Vec::new();
+    let mut samplers = Vec::new();
+    let mut bound = Vec::new();
+    {
+        for &(shader, t, visibility) in stages {
             let mut stage = Stage {
                 shader: shader.clone(),
                 user_data: None,
@@ -524,16 +599,33 @@ impl HostPipeline {
             ] {
                 for &slot in slots {
                     let uav = kind == D3D12_ROOT_PARAMETER_TYPE_UAV;
+                    if slot == SLOT_MESH_ARGS && kind == D3D12_ROOT_PARAMETER_TYPE_CBV {
+                        out.push((slot, params.len() as u32));
+                        params.push(D3D12_ROOT_PARAMETER1 {
+                            ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+                            Anonymous: D3D12_ROOT_PARAMETER1_0 {
+                                Constants: D3D12_ROOT_CONSTANTS {
+                                    ShaderRegister: u32::from(slot),
+                                    RegisterSpace: ROOT_CBV_SPACE,
+                                    Num32BitValues: MESH_ARG_DWORDS,
+                                },
+                            },
+                            ShaderVisibility: visibility,
+                        });
+                        continue;
+                    }
                     // Ours, not the title's, stay root descriptors: the
                     // table of strides, the directory of title memory by
-                    // address and its fault notes.
-                    let ours = if uav {
-                        slot == gambiarra_shader::emit::SLOT_FAULTS
-                    } else {
-                        slot == gambiarra_shader::emit::SLOT_STRIDES
-                            || slot == gambiarra_shader::emit::SLOT_TABLE_STRIDES
-                            || slot == gambiarra_shader::emit::SLOT_MEMORY
-                    };
+                    // address and its fault notes, an emulated mesh
+                    // dispatch's output.
+                    let ours = slot == SLOT_MESH_OUT
+                        || if uav {
+                            slot == gambiarra_shader::emit::SLOT_FAULTS
+                        } else {
+                            slot == gambiarra_shader::emit::SLOT_STRIDES
+                                || slot == gambiarra_shader::emit::SLOT_TABLE_STRIDES
+                                || slot == gambiarra_shader::emit::SLOT_MEMORY
+                        };
                     if (uav || kind == D3D12_ROOT_PARAMETER_TYPE_SRV)
                         && !ours
                         && bounded_root_srvs()
@@ -602,14 +694,30 @@ impl HostPipeline {
             }
             bound.push(stage);
         }
-        let (root, root_blob) =
-            match root_signature(&host.device, &params, &samplers, compute.is_some()) {
-                Ok(root) => root,
-                Err(e) => {
-                    tracing::warn!(error = %e, ?shaders, "host root signature refused");
-                    return None;
-                }
-            };
+    }
+    Some(Params {
+        params,
+        ranges,
+        samplers,
+        bound,
+    })
+}
+
+impl HostPipeline {
+    /// The pipeline state object of [`HostPipeline::new`] on the root signature its stages
+    /// define.
+    #[allow(clippy::too_many_arguments)]
+    fn finish(
+        shaders: &[Arc<Shader>],
+        compute: Option<&Arc<Shader>>,
+        mesh: Option<&Arc<Shader>>,
+        stages: Vec<(&Arc<Shader>, D3D12_SHADER_VISIBILITY)>,
+        g: Option<&GraphicsState>,
+        host: &crate::host::Host,
+        root: ID3D12RootSignature,
+        root_blob: Vec<u8>,
+        bound: Vec<Stage>,
+    ) -> Option<HostPipeline> {
         let code = |i: usize| {
             stages.get(i).and_then(|(s, _)| s.translated()).map_or(
                 D3D12_SHADER_BYTECODE::default(),
@@ -655,6 +763,7 @@ impl HostPipeline {
                 inputs: Vec::new(),
                 rects: false,
                 state: String::new(),
+                emulated: None,
             });
         }
         let Some(g) = g else {
@@ -716,6 +825,7 @@ impl HostPipeline {
                 inputs: Vec::new(),
                 rects: false,
                 state: String::new(),
+                emulated: None,
             });
         }
 
@@ -747,7 +857,7 @@ impl HostPipeline {
                 }),
             BlendState: host_blend(&g.blend, &g.targets),
             SampleMask: g.sample_mask,
-            RasterizerState: g.rasterizer,
+            RasterizerState: host.rasterizer(g.rasterizer),
             DepthStencilState: g.depth,
             InputLayout: D3D12_INPUT_LAYOUT_DESC {
                 pInputElementDescs: g.inputs.as_ptr(),
@@ -867,6 +977,7 @@ impl HostPipeline {
                     b.RenderTargetWriteMask
                 )
             },
+            emulated: None,
         })
     }
 }
@@ -1098,6 +1209,192 @@ fn mesh_pipeline(
     }
 }
 
+/// A mesh pipeline on a host without mesh shaders ([`mesh_emulation`]): the mesh program as
+/// compute ([`Shader::mesh_compute`]) on a root signature of its own, and a drawing pipeline
+/// of the reader vertex shader (`gambiarra_shader::emit::mesh_reader_vs`) with the title's
+/// pixel shader and graphics state, whose stages are the pixel stage alone (the reader's
+/// two root parameters are set by the dispatch).
+fn emulated_mesh(
+    shaders: &[Arc<Shader>],
+    ms: &Arc<Shader>,
+    ps: Option<&Arc<Shader>>,
+    g: &GraphicsState,
+    host: &crate::host::Host,
+    aniso_point_mip_supported: bool,
+) -> Option<HostPipeline> {
+    use gambiarra_shader::emit::{SLOT_MESH_ARGS, SLOT_MESH_OUT};
+    let Some((cs, layout)) = ms.mesh_compute() else {
+        return refuse("a mesh shader that does not translate as compute", shaders);
+    };
+    let ps_t = match ps {
+        Some(ps) => Some(ps.translated()?),
+        None => None,
+    };
+    let vs = match gambiarra_shader::emit::mesh_reader_vs(layout, ps_t.map(|t| &t.host.dxil[..]))
+    {
+        Ok(vs) => vs,
+        Err(e) => {
+            tracing::warn!(error = %e, ?shaders, "no reader stage for an emulated mesh pipeline");
+            return None;
+        }
+    };
+    let bytecode = |dxil: &[u8]| D3D12_SHADER_BYTECODE {
+        pShaderBytecode: dxil.as_ptr().cast(),
+        BytecodeLength: dxil.len(),
+    };
+    let found = |views: &[(u8, u32)], slot: u8| views.iter().find(|r| r.0 == slot).map(|r| r.1);
+
+    // The mesh program as compute.
+    let Params {
+        params,
+        ranges: _compute_ranges,
+        samplers,
+        bound,
+    } = root_params(
+        &[(ms, cs, D3D12_SHADER_VISIBILITY_ALL)],
+        aniso_point_mip_supported,
+    )?;
+    let (croot, cblob) = match root_signature(&host.device, &params, &samplers, true) {
+        Ok(root) => root,
+        Err(e) => {
+            tracing::warn!(error = %e, ?shaders, "host root signature refused (mesh as compute)");
+            return None;
+        }
+    };
+    let compute_args = found(&bound[0].root_cbvs, SLOT_MESH_ARGS)?;
+    let compute_out = found(&bound[0].root_uavs, SLOT_MESH_OUT)?;
+    let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
+        // SAFETY: a borrowed pointer the description never releases.
+        pRootSignature: unsafe { std::mem::transmute_copy(&croot) },
+        CS: bytecode(&cs.dxil),
+        ..Default::default()
+    };
+    let name = super::library::name("mesh as compute", &cblob, &[&cs.dxil], "");
+    let made = super::library::pipeline(
+        &name,
+        // SAFETY: the description points at live data.
+        |library, name| unsafe { library.LoadComputePipeline(name, &desc) },
+        // SAFETY: as above.
+        || unsafe { host.device.CreateComputePipelineState(&desc) },
+    );
+    let cpso = match made {
+        Ok(pso) => pso,
+        Err(e) => {
+            tracing::warn!(error = %e, ?shaders, "host pipeline refused (mesh as compute)");
+            host.log_messages();
+            return None;
+        }
+    };
+    let compute_name = format!("{shaders:?} as compute");
+    crate::host::name(&cpso, || compute_name.clone());
+    let compute = HostPipeline {
+        compute: true,
+        mesh: false,
+        pso: cpso,
+        root: croot,
+        stages: bound,
+        name: compute_name,
+        slots: 0,
+        inputs: Vec::new(),
+        rects: false,
+        state: String::new(),
+        emulated: None,
+    };
+
+    // Drawing what it stored: the reader, then the title's pixel stage.
+    let mut stages = vec![(ms, &vs, D3D12_SHADER_VISIBILITY_VERTEX)];
+    if let (Some(ps), Some(t)) = (ps, ps_t) {
+        stages.push((ps, &t.host, D3D12_SHADER_VISIBILITY_PIXEL));
+    }
+    let Params {
+        params,
+        ranges: _draw_ranges,
+        samplers,
+        mut bound,
+    } = root_params(&stages, aniso_point_mip_supported)?;
+    let reader = bound.remove(0);
+    let draw_args = found(&reader.root_cbvs, SLOT_MESH_ARGS)?;
+    let draw_out = found(&reader.root_srvs, SLOT_MESH_OUT)?;
+    let (root, blob) = match root_signature(&host.device, &params, &samplers, false) {
+        Ok(root) => root,
+        Err(e) => {
+            tracing::warn!(error = %e, ?shaders, "host root signature refused (mesh drawn)");
+            return None;
+        }
+    };
+    let desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
+        // SAFETY: a borrowed pointer the description never releases.
+        pRootSignature: unsafe { std::mem::transmute_copy(&root) },
+        VS: bytecode(&vs.dxil),
+        PS: ps_t.map_or(D3D12_SHADER_BYTECODE::default(), |t| bytecode(&t.host.dxil)),
+        BlendState: host_blend(&g.blend, &g.targets),
+        SampleMask: g.sample_mask,
+        RasterizerState: host.rasterizer(g.rasterizer),
+        DepthStencilState: g.depth,
+        PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        NumRenderTargets: g.targets.NumRenderTargets,
+        RTVFormats: g.targets.RTFormats,
+        DSVFormat: g.depth_format,
+        SampleDesc: g.samples,
+        ..Default::default()
+    };
+    let state = g.describe();
+    let name = super::library::name("mesh drawn", &blob, &[&vs.dxil, &code_bytes(&desc.PS)], &state);
+    let made = if g.depth_bounds && host.depth_bounds() {
+        graphics_depth_bounds_pipeline(&host.device, &root, &desc, g.depth1(), &name)
+    } else {
+        super::library::pipeline(
+            &name,
+            // SAFETY: the description points at live data.
+            |library, name| unsafe { library.LoadGraphicsPipeline(name, &desc) },
+            // SAFETY: as above.
+            || unsafe { host.device.CreateGraphicsPipelineState(&desc) },
+        )
+    };
+    let pso = match made {
+        Ok(pso) => pso,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                ?shaders,
+                depth_bounds = g.depth_bounds,
+                conservative = g.rasterizer.ConservativeRaster.0,
+                forced_samples = g.rasterizer.ForcedSampleCount,
+                samples = g.samples.Count,
+                targets = g.targets.NumRenderTargets,
+                formats = ?&g.targets.RTFormats[..g.targets.NumRenderTargets.min(8) as usize],
+                dsv = g.depth_format.0,
+                "host pipeline refused (mesh drawn)"
+            );
+            host.log_messages();
+            return None;
+        }
+    };
+    tracing::info!(?shaders, "host mesh pipeline, emulated");
+    crate::host::name(&pso, || format!("{shaders:?}"));
+    Some(HostPipeline {
+        compute: false,
+        mesh: true,
+        pso,
+        root,
+        stages: bound,
+        name: format!("{shaders:?}"),
+        slots: 0,
+        inputs: Vec::new(),
+        rects: false,
+        state: String::new(),
+        emulated: Some(Box::new(Emulated {
+            compute,
+            layout: layout.clone(),
+            compute_args,
+            compute_out,
+            draw_args,
+            draw_out,
+            signatures: Default::default(),
+        })),
+    })
+}
+
 /// The bytes of shader code (none for an absent stage).
 fn code_bytes(code: &D3D12_SHADER_BYTECODE) -> Vec<u8> {
     if code.pShaderBytecode.is_null() {
@@ -1151,7 +1448,18 @@ fn root_signature(
         let blob = blob.ok_or_else(windows::core::Error::empty)?;
         let bytes =
             std::slice::from_raw_parts(blob.GetBufferPointer().cast::<u8>(), blob.GetBufferSize());
-        Ok((device.CreateRootSignature(0, bytes)?, bytes.to_vec()))
+        match device.CreateRootSignature(0, bytes) {
+            Ok(root) => Ok((root, bytes.to_vec())),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    params = params.len(),
+                    samplers = samplers.len(),
+                    "CreateRootSignature refused translated host signature"
+                );
+                Err(error)
+            }
+        }
     }
 }
 

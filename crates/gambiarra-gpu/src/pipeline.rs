@@ -66,7 +66,20 @@ pub(crate) struct Shader {
     pub(crate) ambient: Option<crate::ambient::Role>,
     #[cfg(windows)]
     translated: OnceLock<Option<Translated>>,
+    /// A mesh shader as compute, for hosts without mesh shaders ([`Shader::mesh_compute`]).
+    #[cfg(windows)]
+    mesh_compute: OnceLock<Option<MeshCompute>>,
+    /// What `GAMBIARRA_NEUTRAL_PASSES` gives it ([`crate::neutral`]), found on first ask.
+    #[cfg(windows)]
+    neutral: OnceLock<Option<Arc<crate::neutral::Rule>>>,
 }
+
+/// A mesh program translated as compute and where it stores what it exports.
+#[cfg(windows)]
+pub(crate) type MeshCompute = (
+    gambiarra_shader::emit::HostShader,
+    gambiarra_shader::emit::MeshLayout,
+);
 
 impl std::fmt::Debug for Shader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -121,6 +134,10 @@ fn shader(stage: &'static str, bytes: &[u8]) -> Arc<Shader> {
                     .flatten(),
                 #[cfg(windows)]
                 translated: OnceLock::new(),
+                #[cfg(windows)]
+                mesh_compute: OnceLock::new(),
+                #[cfg(windows)]
+                neutral: OnceLock::new(),
             })
         })
         .clone()
@@ -193,6 +210,48 @@ impl Shader {
 
 #[cfg(windows)]
 impl Shader {
+    /// A mesh shader's program as a compute program that stores what it exports, for a host
+    /// without mesh shaders to draw (`pipeline::host`, emulated mesh pipelines); made on
+    /// first use, logged once if it does not translate.
+    pub(crate) fn mesh_compute(&self) -> Option<&MeshCompute> {
+        self.mesh_compute
+            .get_or_init(|| {
+                crate::descriptor::host::probe_view_limit();
+                match gambiarra_shader::emit::translate_mesh_as_compute(&self.container) {
+                    Ok(done) => {
+                        tracing::info!(hash = %self.hash, "mesh shader translated as compute");
+                        Some(done)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            hash = %self.hash,
+                            error = %e,
+                            "mesh shader does not translate as compute; its draws are dropped"
+                        );
+                        None
+                    }
+                }
+            })
+            .as_ref()
+    }
+
+    /// The neutral result `GAMBIARRA_NEUTRAL_PASSES` names for it, whatever its code stores
+    /// (see [`neutral`] for the pipelines it applies to).
+    pub(crate) fn neutral_rule(&self) -> Option<&Arc<crate::neutral::Rule>> {
+        if !crate::neutral::on() {
+            return None;
+        }
+        self.neutral
+            .get_or_init(|| crate::neutral::rule_for(self.stage, &self.hash, &self.container))
+            .as_ref()
+    }
+
+    /// Whether its pass is given a neutral result that writes views (its bind keeps the
+    /// tables it makes for them).
+    pub(crate) fn neutral_writes(&self) -> bool {
+        self.neutral_rule().is_some_and(|r| r.writes())
+    }
+
     /// The console programs of the container; `None` if they are not known.
     pub(crate) fn programs(&self) -> Option<Vec<gambiarra_shader::NativeProgram>> {
         use gambiarra_shader::{Container, FourCC};
@@ -464,8 +523,61 @@ pub(crate) fn bound(this: This) {
     }
     let frame = crate::frame::current();
     for shader in &p.shaders {
-        tracing::info!(pipeline = ?this, frame, stage = shader.stage, size = shader.container.len(), hash = %shader.hash, "first bind");
+        #[cfg(windows)]
+        let program = crate::neutral::program_name(&shader.container).unwrap_or_default();
+        #[cfg(not(windows))]
+        let program = "";
+        tracing::info!(pipeline = ?this, frame, stage = shader.stage, size = shader.container.len(), hash = %shader.hash, %program, "first bind");
+        #[cfg(windows)]
+        if !program.is_empty() {
+            PROGRAMS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(HashMap::new)
+                .insert(shader.hash.clone(), program);
+        }
     }
+}
+
+/// The title's program names of the shaders bound so far, by hash (for the timing lines).
+#[cfg(windows)]
+static PROGRAMS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+/// The program names of the shader hashes in `text` (as the pipelines' names print them),
+/// `" / "` between them; empty if none is known.
+#[cfg(windows)]
+#[cfg_attr(not(feature = "diagnostics"), allow(dead_code))]
+pub(crate) fn programs_in(text: &str) -> String {
+    let programs = PROGRAMS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(programs) = programs.as_ref() else {
+        return String::new();
+    };
+    text.split(|c: char| !c.is_ascii_hexdigit())
+        .filter(|w| w.len() == 16)
+        .filter_map(|hash| programs.get(hash).map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
+
+/// The neutral result of a compute pipeline's pass (`GAMBIARRA_NEUTRAL_PASSES`,
+/// [`crate::neutral`]): `None` if the setting does not name its shader, or if its code stores
+/// to buffers (it then runs as the title has it), or for the structure builder's.
+#[cfg(windows)]
+pub(crate) fn neutral(this: This) -> Option<Arc<crate::neutral::Rule>> {
+    if this.is_null() || !crate::neutral::on() {
+        return None;
+    }
+    let p = pipeline(this);
+    let [shader] = &p.shaders[..] else {
+        return None;
+    };
+    let rule = shader.neutral_rule()?;
+    if p.builder {
+        return None;
+    }
+    let stores = shader.translated()?.stores;
+    crate::neutral::note(&shader.hash, &shader.container, rule, stores);
+    (!stores).then(|| rule.clone())
 }
 
 /// The host pipeline of a title pipeline; `None` if one of its shaders does
@@ -518,13 +630,61 @@ fn skipped_shader(p: &Pipeline) -> Option<&str> {
         let value = std::env::var("GAMBIARRA_SKIP_PIPELINES").unwrap_or_default();
         parse_skip_hashes(&value)
     });
-    if hashes.is_empty() {
-        return None;
+    if let Some(shader) = p.shaders.iter().find(|shader| hashes.contains(&shader.hash)) {
+        return Some(shader.hash.as_str());
     }
     p.shaders
         .iter()
-        .find(|shader| hashes.contains(&shader.hash))
+        .find(|shader| skipped_by_name(shader))
         .map(|shader| shader.hash.as_str())
+}
+
+/// `GAMBIARRA_SKIP_PASSES=<part>[,<part>...]`: pipelines with a shader whose container names a
+/// program containing one of the parts (the title's program names, `CS_CloudMap` and the like)
+/// are skipped, to see what a pass costs, or to run without it on a weak card. A skipped pass
+/// writes nothing, so what reads its output after it reads what was there before.
+#[cfg(all(windows, feature = "diagnostics"))]
+fn skipped_by_name(shader: &Shader) -> bool {
+    static PARTS: OnceLock<Vec<Vec<u8>>> = OnceLock::new();
+    static SEEN: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+    let parts = PARTS.get_or_init(|| {
+        let value = std::env::var("GAMBIARRA_SKIP_PASSES").unwrap_or_default();
+        let parts: Vec<Vec<u8>> = value
+            .split(',')
+            .map(str::trim)
+            .filter(|p| p.len() >= 3)
+            .map(|p| p.as_bytes().to_vec())
+            .collect();
+        if !parts.is_empty() {
+            tracing::info!(passes = %value, "passes skipped by program name (GAMBIARRA_SKIP_PASSES)");
+        }
+        parts
+    });
+    if parts.is_empty() {
+        return false;
+    }
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let seen = seen.get_or_insert_with(HashMap::new);
+    if let Some(&skip) = seen.get(&shader.hash) {
+        return skip;
+    }
+    // A culling pass writes the arguments of the indirect draws after it: skipped, those
+    // draws read stale or random counts and the card hangs (seen with `Shadow`, 28/11/2026).
+    let culls = shader.container.windows(4).any(|w| w == b"Cull");
+    let found = parts
+        .iter()
+        .filter(|_| !culls)
+        .find(|part| shader.container.windows(part.len()).any(|w| w == &part[..]));
+    if let Some(part) = found {
+        tracing::info!(
+            shader = %shader.hash,
+            stage = shader.stage,
+            part = %String::from_utf8_lossy(part),
+            "pass skipped by name"
+        );
+    }
+    seen.insert(shader.hash.clone(), found.is_some());
+    found.is_some()
 }
 
 #[cfg(all(windows, feature = "diagnostics"))]

@@ -28,7 +28,9 @@
 //! - a number: that share of the estimate (1: all of it).
 //! - `constant:<level>`: the constant, as beloooo's fork has it.
 //!
-//! `GAMBIARRA_AMBIENT_SHADE=<strength>,<radius in metres>` sets the creases.
+//! `GAMBIARRA_AMBIENT_SHADE=<strength>,<radius in metres>` sets the creases;
+//! `GAMBIARRA_AMBIENT_TINT=r,g,b` the constant's colour, and
+//! `GAMBIARRA_AMBIENT_FILE` (diagnostics) both live ([`tint`]).
 //!
 //! The air of a room is lit by the same probes: without rays they hold the
 //! sky's light indoors too, a brown veil at sunset. `GAMBIARRA_AMBIENT_AIR`
@@ -136,8 +138,74 @@ fn shade() -> [f32; 2] {
     })
 }
 
+/// The constant's colour (`constant:<level>`): warm white, or what
+/// `GAMBIARRA_AMBIENT_TINT=r,g,b` gives (beloooo's fork found 0.07 bluish
+/// at night, 0.3 warm at dusk, 1.4 sky blue at noon looking right).
+/// Diagnostics builds: with `GAMBIARRA_AMBIENT_FILE=<file>`, the file's
+/// `level r g b` is read twice a second and replaces the level (of either
+/// form) and the colour, to tune them by eye in a running game. After
+/// Belobug/VIctory-Belobug-AMD (ambient.rs, `VICTORY_AMBIENT_TINT`,
+/// `VICTORY_AMBIENT_FILE`, GPL-3.0-or-later).
+fn tint() -> [f32; 3] {
+    if let Some((_, tint)) = live() {
+        return tint;
+    }
+    static SET: OnceLock<[f32; 3]> = OnceLock::new();
+    *SET.get_or_init(|| parse_tint(&std::env::var("GAMBIARRA_AMBIENT_TINT").unwrap_or_default()))
+}
+
+fn parse_tint(set: &str) -> [f32; 3] {
+    let set: Vec<f32> = set
+        .split(',')
+        .filter_map(|v| v.trim().parse().ok())
+        .filter(|v: &f32| v.is_finite() && *v >= 0.0)
+        .collect();
+    match set[..] {
+        [r, g, b] => [r, g, b],
+        _ => [1.0, 0.98, 0.94],
+    }
+}
+
+/// The level and colour last read from `GAMBIARRA_AMBIENT_FILE`, if any;
+/// starts the thread that reads it.
+fn live() -> Option<(f32, [f32; 3])> {
+    static LIVE: Mutex<Option<(f32, [f32; 3])>> = Mutex::new(None);
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        if !cfg!(feature = "diagnostics") {
+            return;
+        }
+        let Some(file) = std::env::var_os("GAMBIARRA_AMBIENT_FILE") else {
+            return;
+        };
+        let _ = std::thread::Builder::new()
+            .name("gambiarra-ambient".into())
+            .spawn(move || {
+                loop {
+                    let read: Vec<f32> = std::fs::read_to_string(&file)
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .filter_map(|v| v.parse().ok())
+                        .collect();
+                    if let [level, r, g, b, ..] = read[..]
+                        && [level, r, g, b].iter().all(|v| v.is_finite() && *v >= 0.0)
+                    {
+                        let new = Some((level, [r, g, b]));
+                        let mut live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+                        if *live != new {
+                            tracing::info!(level, r, g, b, "ambient light set from the file");
+                            *live = new;
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
+            });
+    });
+    *LIVE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 const SOURCE: &str = r#"
-#define RS "RootConstants(num32BitConstants=12, b0), DescriptorTable(SRV(t0)), DescriptorTable(UAV(u0)), UAV(u1), UAV(u2)"
+#define RS "RootConstants(num32BitConstants=15, b0), DescriptorTable(SRV(t0)), DescriptorTable(UAV(u0)), UAV(u1), UAV(u2)"
 #define CX 64
 #define CY 36
 #define CELLS (CX * CY)
@@ -147,6 +215,7 @@ cbuffer Set : register(b0) {
     float level; float constant; float strength; float radius;
     float near; float tan_y; uint width; uint height;
     float follow; float most; float air; float unused;
+    float3 tint;
 };
 Texture2D<float> depth : register(t0);
 // Cells: the light they send out (then, at CELLS, the slow mean), from
@@ -303,7 +372,7 @@ void raise(uint3 at : SV_DispatchThreadID) {
     }
     float3 found;
     if (constant > 0.0) {
-        found = float3(1.0, 0.98, 0.94) * constant * open;
+        found = tint * constant * open;
         light[p] = pack(found);
         return;
     }
@@ -452,6 +521,12 @@ pub(crate) fn after(list: &HostList, role: Role, views: &Views) -> bool {
         Set::Estimate(level) => (level, 0.0f32),
         Set::Constant(level) => (0.0, level),
     };
+    // (`GAMBIARRA_AMBIENT_FILE`: its level, in the form set.)
+    let (level, constant) = match live() {
+        Some((live, _)) if constant > 0.0 => (0.0, live.max(1e-6)),
+        Some((live, _)) => (live, 0.0),
+        None => (level, constant),
+    };
     if role != Role::Radiance && constant == 0.0 && !KEPT.load(Ordering::Relaxed) {
         return false;
     }
@@ -470,7 +545,7 @@ pub(crate) fn after(list: &HostList, role: Role, views: &Views) -> bool {
     list.keep(&pass.points);
     let [strength, radius] = shade();
     let floats = [level, constant, strength, radius, 0.1, 0.45];
-    let mut words = [0u32; 12];
+    let mut words = [0u32; 15];
     for (to, v) in words.iter_mut().zip(floats) {
         *to = v.to_bits();
     }
@@ -479,6 +554,9 @@ pub(crate) fn after(list: &HostList, role: Role, views: &Views) -> bool {
     words[8] = 0.04f32.to_bits();
     words[9] = 4.0f32.to_bits();
     words[10] = air().to_bits();
+    for (to, v) in words[12..].iter_mut().zip(tint()) {
+        *to = v.to_bits();
+    }
     let l = &list.list;
     // SAFETY: an open list with the heap of the views set; the title's
     // program has just used both views, so their textures are in the states
@@ -486,7 +564,7 @@ pub(crate) fn after(list: &HostList, role: Role, views: &Views) -> bool {
     unsafe {
         uav_barrier(l);
         l.SetComputeRootSignature(&pass.root);
-        l.SetComputeRoot32BitConstants(0, 12, words.as_ptr().cast(), 0);
+        l.SetComputeRoot32BitConstants(0, words.len() as u32, words.as_ptr().cast(), 0);
         l.SetComputeRootDescriptorTable(1, views.depth);
         l.SetComputeRootDescriptorTable(2, views.image);
         l.SetComputeRootUnorderedAccessView(3, pass.cells.GetGPUVirtualAddress());
@@ -537,6 +615,9 @@ mod tests {
         assert_eq!(parse("0.8"), Set::Estimate(0.8));
         assert_eq!(parse("constant:0.3"), Set::Constant(0.3));
         assert_eq!(parse("constant:nan"), Set::Off);
+        assert_eq!(parse_tint(""), [1.0, 0.98, 0.94]);
+        assert_eq!(parse_tint("0.6, 0.7,1"), [0.6, 0.7, 1.0]);
+        assert_eq!(parse_tint("1,2"), [1.0, 0.98, 0.94]);
     }
 
     #[test]

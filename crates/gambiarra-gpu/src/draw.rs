@@ -464,7 +464,8 @@ pub(crate) struct State {
     #[cfg(feature = "diagnostics")]
     user: Vec<u32>,
     /// The tables the last bind made afresh for a program the stand-in for
-    /// the indirect light follows (`crate::ambient`): root parameter, bytes
+    /// the indirect light follows (`crate::ambient`), or one given a neutral
+    /// result that writes views (`crate::neutral`): root parameter, bytes
     /// into the view heap.
     ambient_tables: Vec<(u8, u32)>,
     /// What the host list has: pipeline, root signature, heaps.
@@ -473,6 +474,9 @@ pub(crate) struct State {
     host_roots: [usize; 2],
     host_heaps: [usize; 2],
     host_heaps_set: bool,
+    /// The emulated mesh dispatches' buffer (`crate::mesh`) in this list: read by a draw
+    /// since its last write (else written or untouched, which buffers start as).
+    mesh_read: bool,
     /// Tables made afresh in this list: (table, slot count, contents) → first
     /// dynamic slot.
     fresh_tables: std::collections::HashMap<
@@ -545,6 +549,11 @@ impl State {
 fn scissor_test() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("GAMBIARRA_SCISSOR_TEST").as_deref() == Ok("full"))
+}
+
+/// The root views of an emulated mesh dispatch (`crate::mesh`), which it binds itself.
+fn is_mesh_slot(slot: u8) -> bool {
+    slot == gambiarra_shader::emit::SLOT_MESH_ARGS || slot == gambiarra_shader::emit::SLOT_MESH_OUT
 }
 
 /// An experiment on mesh draws (`GAMBIARRA_MESH_TEST`): 1 for `skip` (none
@@ -703,6 +712,18 @@ impl<T> HeapRanges<T> {
     fn ranges(&self) -> impl Iterator<Item = &(T, u64, u64)> {
         self.0.iter().flatten()
     }
+}
+
+/// `GAMBIARRA_MESH_RACY=1` (diagnostics): the emulated mesh dispatches run without their
+/// barriers, to measure what the barriers cost (the drawn result may be wrong).
+fn mesh_racy() -> bool {
+    #[cfg(feature = "diagnostics")]
+    {
+        static RACY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *RACY.get_or_init(|| std::env::var("GAMBIARRA_MESH_RACY").is_ok_and(|v| v == "1"))
+    }
+    #[cfg(not(feature = "diagnostics"))]
+    false
 }
 
 #[cfg(test)]
@@ -1437,6 +1458,10 @@ impl State {
         if kind == gambiarra_shader::emit::USER_DISPATCH_THREADS_X {
             return 0;
         }
+        // The title's own groups, one a host group, unless the dispatch halves them.
+        if kind == gambiarra_shader::emit::USER_MERGED_GROUPS_X {
+            return 0;
+        }
         if kind == USER_ROOT_ADDRESS || kind == USER_ROOT_ADDRESS + 1 {
             return match self.roots_ref(compute).get(usize::from(slot)) {
                 Some(&Root::View(address)) if kind == USER_ROOT_ADDRESS => address as u32,
@@ -1764,7 +1789,7 @@ impl State {
                 once!("a draw whose descriptor table found no free slots is dropped");
                 return false;
             }
-            if stage.shader.ambient.is_some() {
+            if stage.shader.ambient.is_some() || stage.shader.neutral_writes() {
                 self.ambient_tables.clear();
                 self.ambient_tables.extend(made.iter().copied());
             }
@@ -1838,6 +1863,10 @@ impl State {
             }
             for (views, srv) in [(&stage.root_cbvs, false), (&stage.root_srvs, true)] {
                 for &(slot, param) in views {
+                    if is_mesh_slot(slot) {
+                        // Ours: set by the emulated mesh dispatch.
+                        continue;
+                    }
                     if srv && slot == gambiarra_shader::emit::SLOT_MEMORY {
                         // Ours: the directory of title memory by address.
                         if let Some(m) = &memory {
@@ -1938,6 +1967,9 @@ impl State {
                 }
             }
             for &(slot, param) in &stage.root_uavs {
+                if is_mesh_slot(slot) {
+                    continue;
+                }
                 if slot == gambiarra_shader::emit::SLOT_FAULTS {
                     // Ours: where shaders note the pages they found empty.
                     if let Some(m) = &memory {
@@ -3372,6 +3404,10 @@ impl State {
             once!("a dispatch with a graphics pipeline");
             return;
         }
+        if let Some(rule) = crate::pipeline::neutral(self.pipeline as This) {
+            self.neutral(list, p, &rule);
+            return;
+        }
         if !self.bind(list, p, true) {
             DROPPED.fetch_add(1, Ordering::Relaxed);
             // A stage of the structure builder that cannot be bound is a
@@ -3413,14 +3449,132 @@ impl State {
                 };
             }
         }
+        // A program with two of the title's groups in each host group
+        // (`GAMBIARRA_MERGE_WAVE32`): told the title's count in x, it runs in half as
+        // many groups there; the word goes back to 0 (what `bind` sets) after.
+        let merged = compute_word(p, gambiarra_shader::emit::USER_MERGED_GROUPS_X);
+        if let Some((param, word)) = merged {
+            // SAFETY: an open list; the root signature has the word.
+            unsafe { list.list.SetComputeRoot32BitConstant(param, x, word) };
+        }
+        let x = if merged.is_some() { x.div_ceil(2) } else { x };
         // SAFETY: an open list with everything set.
         unsafe { list.list.Dispatch(x, y, z) };
+        if let Some((param, word)) = merged {
+            // SAFETY: as above.
+            unsafe { list.list.SetComputeRoot32BitConstant(param, 0, word) };
+        }
         self.buffers_written();
         DISPATCHED.fetch_add(1, Ordering::Relaxed);
         if let Some(role) = p.stages.first().and_then(|s| s.shader.ambient)
             && crate::ambient::on()
             && self.ambient(list, p, role)
         {
+            self.host_pipeline = 0;
+            self.host_roots[1] = 0;
+        }
+    }
+
+    /// A dispatch of `p` given a neutral result in place of its program
+    /// (`crate::neutral`): the views the rule fills are filled, the others
+    /// keep what they hold. Its code stores to no buffer
+    /// (`crate::pipeline::neutral`), so nothing after it waits on a count or
+    /// arguments it should have written.
+    fn neutral(&mut self, list: &HostList, p: &HostPipeline, rule: &crate::neutral::Rule) {
+        use crate::neutral::{Fill, Shape, ToFill};
+        #[cfg(feature = "diagnostics")]
+        {
+            crate::pipeline::note_why(format!("a neutral pass in place of {}", p.name));
+            list.note_op(|| self.op_text("neutral pass".to_owned(), true));
+        }
+        if !rule.writes() {
+            return;
+        }
+        // Its tables and heaps, and its views in the unordered access state.
+        if !self.bind(list, p, true) {
+            once!(pipeline = p.name, "a neutral pass that cannot be bound fills nothing");
+            return;
+        }
+        let Some(t) = p.stages.first().map(|s| s.translated()) else {
+            return;
+        };
+        let mut targets: Vec<ToFill> = Vec::new();
+        for u in &t.used {
+            if u.kind != ResourceType::Uav || u.root != RootType::Table {
+                continue;
+            }
+            let Fill::Value(value) = rule.fill(u.slot, u.table_offset_dwords) else {
+                continue;
+            };
+            let Some(&Root::Table(table)) = self.roots_ref(true).get(usize::from(u.slot)) else {
+                continue;
+            };
+            let handle = table + u64::from(u.table_offset_dwords) * 4;
+            let Some(host_heap) = self.heap_of(table).and_then(|h| h.host()) else {
+                continue;
+            };
+            let (resource, desc) = match crate::descriptor::view(handle) {
+                Some(View::Unordered(r, _, desc)) => (r, desc),
+                other => {
+                    once!(
+                        pipeline = p.name,
+                        view = ?other.map(|v| format!("{v:?}").chars().take(60).collect::<String>()),
+                        "a neutral pass leaves a view it cannot fill (not a view of a texture object)"
+                    );
+                    continue;
+                }
+            };
+            if crate::resource::buffer_bytes(resource as This).is_some() {
+                continue;
+            }
+            let Some(host) = crate::resource::twin_resource(resource as This)
+                .or_else(|| crate::resource::host_resource(resource as This))
+            else {
+                continue;
+            };
+            // SAFETY: a live resource.
+            let d = unsafe { host.GetDesc() };
+            let shape = match desc.map(|w| w[1]) {
+                Some(4) => Some(Shape::Plain),
+                Some(5) => Some(Shape::Array),
+                Some(8) => Some(Shape::Volume),
+                Some(_) => None,
+                None if d.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D => Some(Shape::Volume),
+                None if d.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D => {
+                    Some(if d.DepthOrArraySize > 1 { Shape::Array } else { Shape::Plain })
+                }
+                None => None,
+            };
+            let kind = desc
+                .and_then(|w| crate::neutral::kind_of(crate::resource::pc_format(w[0])))
+                .or_else(|| crate::neutral::kind_of(d.Format.0 as u32));
+            let (Some(shape), Some(kind)) = (shape, kind) else {
+                once!(
+                    pipeline = p.name,
+                    dimension = ?desc.map(|w| w[1]),
+                    format = d.Format.0,
+                    "a neutral pass leaves a view of a shape or format it does not fill"
+                );
+                continue;
+            };
+            let start = match self.ambient_tables.iter().find(|m| m.0 == u.slot) {
+                Some(m) => m.1,
+                None => self.user_value(true, u.slot, RootType::Table, 0),
+            };
+            let depth = if shape == Shape::Plain {
+                1
+            } else {
+                u32::from(d.DepthOrArraySize)
+            };
+            targets.push(ToFill {
+                view: host_heap.gpu_handle((start + u.table_offset_dwords * 4) / 32),
+                shape,
+                kind,
+                size: [d.Width as u32, d.Height, depth],
+                value,
+            });
+        }
+        if crate::neutral::fill(list, &targets) {
             self.host_pipeline = 0;
             self.host_roots[1] = 0;
         }
@@ -3821,6 +3975,21 @@ impl State {
         self.window = None;
         #[cfg(feature = "diagnostics")]
         self.trace("mesh", x, 0);
+        if let Some(p) = crate::pipeline::host_pipeline(self.pipeline as This)
+            && let Some(e) = &p.emulated
+        {
+            let ran = mesh_test() != 1
+                && mesh_kept(self.pipeline)
+                && self.dispatch_mesh_emulated(list, p, e, x);
+            if ran {
+                DRAWN.fetch_add(1, Ordering::Relaxed);
+            } else {
+                DROPPED.fetch_add(1, Ordering::Relaxed);
+                #[cfg(feature = "diagnostics")]
+                dropped(self.pipeline);
+            }
+            return;
+        }
         let ran = mesh_test() != 1
             && mesh_kept(self.pipeline)
             && self.prepare_for(list, false, true)
@@ -3858,6 +4027,232 @@ impl State {
             #[cfg(feature = "diagnostics")]
             dropped(self.pipeline);
         }
+    }
+
+    /// A mesh dispatch of `x` groups on a host without mesh shaders
+    /// (`pipeline::host::Emulated`): the mesh program runs as compute, its groups' vertices
+    /// and primitives go to the shared buffer (`crate::mesh`), and the pipeline `p` draws
+    /// them as a triangle list, three vertices per primitive slot. Groups that do not fit
+    /// in the buffer at once run in parts. False if nothing was drawn.
+    fn dispatch_mesh_emulated(
+        &mut self,
+        list: &HostList,
+        p: &HostPipeline,
+        e: &crate::pipeline::host::Emulated,
+        x: u32,
+    ) -> bool {
+        let Some(scratch) = crate::mesh::scratch() else {
+            return false;
+        };
+        let layout = &e.layout;
+        let group_bytes = layout.group_dwords() * 4;
+        let per_part = (scratch.bytes / group_bytes.max(1)).min(65_535) as u32;
+        if per_part == 0 {
+            once!(group_bytes, "a mesh group larger than the emulated dispatches' buffer");
+            return false;
+        }
+        let l = &list.list;
+        list.keep(&scratch.buffer);
+        let mut done = 0;
+        while done < x {
+            let n = (x - done).min(per_part);
+            let prims = n * layout.max_vertices * layout.vertex_dwords;
+            let at = scratch.take(u64::from(n) * group_bytes);
+            let args = [done, prims, 0, 0];
+            // The mesh program, with the title's graphics root arguments.
+            if self.mesh_read {
+                // SAFETY: an open list; the buffer lives as long as the process.
+                unsafe {
+                    if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(
+                        &scratch.buffer,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    )]); }
+                };
+                self.mesh_read = false;
+            }
+            let title_compute = std::mem::replace(&mut self.compute, self.graphics.clone());
+            let bound = self.bind(list, &e.compute, true);
+            self.compute = title_compute;
+            if !bound {
+                return done > 0;
+            }
+            // SAFETY: an open list with the compute pipeline and its root signature set;
+            // the parameters are the args and the output.
+            unsafe {
+                l.SetComputeRoot32BitConstants(e.compute_args, 4, args.as_ptr().cast(), 0);
+                l.SetComputeRootUnorderedAccessView(e.compute_out, scratch.gpu + at);
+                l.Dispatch(n, 1, 1);
+                if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(
+                    &scratch.buffer,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                )]); }
+            }
+            self.mesh_read = true;
+            // What it stored, drawn.
+            if !self.prepare_for(list, false, true) {
+                return done > 0;
+            }
+            #[cfg(feature = "diagnostics")]
+            list.note_op(|| self.op_text(format!("mesh {n} emulated"), false));
+            self.mesh_scissor(list, true);
+            // SAFETY: an open list with the drawing pipeline and its root signature set.
+            unsafe {
+                l.SetGraphicsRoot32BitConstants(e.draw_args, 4, args.as_ptr().cast(), 0);
+                l.SetGraphicsRootShaderResourceView(e.draw_out, scratch.gpu + at);
+                l.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY(4));
+                l.DrawInstanced(n * layout.max_primitives * 3, 1, 0, 0);
+            }
+            self.mesh_scissor(list, false);
+            if self.topology_set {
+                self.set_topology(list, self.topology);
+            }
+            self.drew(Some(p));
+            done += n;
+        }
+        true
+    }
+
+    /// An indirect mesh dispatch of one record (its group count at byte `at` of `records`,
+    /// clamped, left readable as indirect arguments) on a host without mesh shaders: a pass
+    /// of ours (`crate::mesh::convert`) reads the count, takes room for that many groups in
+    /// the indirect half of the shared buffer and writes the two halves' commands, which then
+    /// run as indirect executions. False if nothing was drawn.
+    fn mesh_indirect_emulated(
+        &mut self,
+        list: &HostList,
+        p: &HostPipeline,
+        e: &crate::pipeline::host::Emulated,
+        records: &ID3D12Resource,
+        at: u64,
+    ) -> bool {
+        use crate::mesh::{COMPUTE_AT, DRAW_AT};
+        let (Some(scratch), Some(convert)) = (crate::mesh::scratch(), crate::mesh::convert()) else {
+            return false;
+        };
+        let Some((compute_sig, draw_sig)) = e
+            .signatures
+            .get_or_init(|| {
+                crate::mesh::signatures(
+                    &e.compute.root,
+                    e.compute_args,
+                    e.compute_out,
+                    &p.root,
+                    e.draw_args,
+                    e.draw_out,
+                )
+            })
+            .as_ref()
+        else {
+            return false;
+        };
+        let layout = &e.layout;
+        let group_bytes = layout.group_dwords() * 4;
+        let (out, out_bytes) = scratch.indirect();
+        let most = (out_bytes / group_bytes.max(1)).min(65_535) as u32;
+        if most == 0 {
+            once!(group_bytes, "a mesh group larger than the emulated dispatches' buffer");
+            return false;
+        }
+        let l = &list.list;
+        list.keep(&scratch.buffer);
+        list.keep(&convert.control);
+        list.keep(records);
+        let constants = [
+            0,
+            group_bytes as u32,
+            layout.max_vertices * layout.vertex_dwords,
+            layout.max_primitives * 3,
+            out as u32,
+            (out >> 32) as u32,
+            out_bytes.min(u64::from(u32::MAX)) as u32,
+            most,
+        ];
+        const ARGS: D3D12_RESOURCE_STATES = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+        let read_args = D3D12_RESOURCE_STATES(ARGS.0 | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE.0);
+        // The pass: reads the record, writes the commands (the control buffer comes from
+        // the common state, which a buffer's first use promotes from).
+        // SAFETY: an open list; the buffers live as long as the list holds them.
+        unsafe {
+            if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(records, ARGS, read_args)]); }
+            l.SetComputeRootSignature(&convert.root);
+            l.SetPipelineState(&convert.pso);
+            l.SetComputeRoot32BitConstants(0, 8, constants.as_ptr().cast(), 0);
+            l.SetComputeRootShaderResourceView(1, records.GetGPUVirtualAddress() + at);
+            l.SetComputeRootUnorderedAccessView(2, convert.control.GetGPUVirtualAddress());
+            l.Dispatch(1, 1, 1);
+            if !mesh_racy() { l.ResourceBarrier(&[
+                crate::host::transition(records, read_args, ARGS),
+                crate::host::transition(
+                    &convert.control,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                    ARGS,
+                ),
+            ]); }
+        }
+        self.host_pipeline = 0;
+        self.host_roots[1] = 0;
+        // The mesh program, with the title's graphics root arguments.
+        if self.mesh_read {
+            // SAFETY: an open list; the buffer lives as long as the process.
+            unsafe {
+                if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(
+                    &scratch.buffer,
+                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                )]); }
+            };
+            self.mesh_read = false;
+        }
+        let title_compute = std::mem::replace(&mut self.compute, self.graphics.clone());
+        let bound = self.bind(list, &e.compute, true);
+        self.compute = title_compute;
+        let back_to_common = |l: &ID3D12GraphicsCommandList| {
+            // SAFETY: an open list; the control buffer is in the argument state.
+            unsafe {
+                if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(
+                    &convert.control,
+                    ARGS,
+                    D3D12_RESOURCE_STATE_COMMON,
+                )]); }
+            };
+        };
+        if !bound {
+            back_to_common(l);
+            return false;
+        }
+        // SAFETY: an open list with the compute half bound; the command is the control
+        // buffer's, in the argument state.
+        unsafe {
+            l.ExecuteIndirect(compute_sig, 1, &convert.control, COMPUTE_AT, None, 0);
+            if !mesh_racy() { l.ResourceBarrier(&[crate::host::transition(
+                &scratch.buffer,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
+            )]); }
+        }
+        self.mesh_read = true;
+        // What it stored, drawn.
+        if !self.prepare_for(list, false, true) {
+            back_to_common(l);
+            return false;
+        }
+        #[cfg(feature = "diagnostics")]
+        list.note_op(|| self.op_text("mesh indirect emulated".to_owned(), false));
+        self.mesh_scissor(list, true);
+        // SAFETY: an open list with the drawing half bound.
+        unsafe {
+            l.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY(4));
+            l.ExecuteIndirect(draw_sig, 1, &convert.control, DRAW_AT, None, 0);
+        }
+        self.mesh_scissor(list, false);
+        back_to_common(l);
+        if self.topology_set {
+            self.set_topology(list, self.topology);
+        }
+        self.drew(Some(p));
+        true
     }
 
     /// The walls trace (`crate::host::walls_trace`): one log line per
@@ -4517,7 +4912,7 @@ impl State {
             self.batch = None;
         }
         // A draw after dispatches waits for them.
-        if kind != DISPATCH {
+        if kind != DISPATCH && kind != crate::indirect::batch::MERGED_DISPATCH {
             self.synced();
         }
         let (id, offset) = (args.id(), args.offset(arguments));
@@ -4575,6 +4970,14 @@ impl State {
             crate::pipeline::note_drop(self.pipeline as This);
             return false;
         };
+        // A pass given a neutral result reads no arguments: nothing to clamp.
+        if kind == DISPATCH
+            && p.compute
+            && let Some(rule) = crate::pipeline::neutral(self.pipeline as This)
+        {
+            self.neutral(list, p, &rule);
+            return true;
+        }
         // Indirect rectangles (the title's tiled lighting, 256
         // indirect draws a frame, makes their corners from the vertex
         // number) are completed by the pipeline's geometry stage: the
@@ -4620,24 +5023,56 @@ impl State {
             },
             None => None,
         };
-        let Some(signature) = matches!(kind, DRAW | INDEXED | DISPATCH | MESH)
-            .then(|| host_signature(kind, stride))
-            .flatten()
-        else {
-            why("no host signature");
+        // A mesh pipeline the host runs as compute and a draw (`dispatch_mesh_emulated`):
+        // one record at a time, its group count read on the card.
+        let emulated = if kind == MESH { p.emulated.as_deref() } else { None };
+        if emulated.is_some() && (max != 1 || count.is_some()) {
+            why("an emulated mesh dispatch of more than one record, or counted");
             return false;
+        }
+        let signature = match emulated {
+            Some(_) => None,
+            None => match matches!(kind, DRAW | INDEXED | DISPATCH | MESH)
+                .then(|| host_signature(kind, stride))
+                .flatten()
+            {
+                Some(s) => Some(s),
+                None => {
+                    why("no host signature");
+                    return false;
+                }
+            },
         };
         if kind == MESH && (mesh_test() == 1 || !mesh_kept(self.pipeline)) {
             why("mesh draws are switched off (GAMBIARRA_MESH_TEST=skip)");
             return false;
         }
+        // A program with two of the title's groups in each host group
+        // (`GAMBIARRA_MERGE_WAVE32`): its record is clamped in a batch as
+        // `indirect::batch::MERGED_DISPATCH` and run with a signature that sets the
+        // title's count in x. Elsewhere its word stays 0: one title group a host group.
+        let merged = (kind == DISPATCH)
+            .then(|| compute_word(p, gambiarra_shader::emit::USER_MERGED_GROUPS_X))
+            .flatten();
         // One record without a count: clamped in a batch (`batches`).
         let batch = if batches() > 0 && max == 1 && count.is_none() {
             args.refresh(list, arguments, len);
+            let kind = match merged {
+                Some(_) => crate::indirect::batch::MERGED_DISPATCH,
+                None => kind,
+            };
             self.batched(list, &args, arguments, kind)
         } else {
             None
         };
+        if merged.is_some() {
+            if batch.is_some() {
+                once!(pipeline = p.name, "GAMBIARRA_MERGE_WAVE32: indirect, two title groups a host group");
+            } else {
+                once!(pipeline = p.name, "GAMBIARRA_MERGE_WAVE32: indirect, not batched: one title group a host group");
+            }
+        }
+        let merged = merged.filter(|_| batch.is_some());
         if batch.is_some() {
             self.window = None;
         }
@@ -4743,6 +5178,30 @@ impl State {
                 (bounded, 0)
             }
         };
+        if let Some(e) = emulated {
+            let ran = self.mesh_indirect_emulated(list, p, e, &bounded, at);
+            if ran {
+                DRAWN.fetch_add(1, Ordering::Relaxed);
+            } else {
+                why("the emulated mesh dispatch did not run");
+            }
+            return ran;
+        }
+        let Some(signature) = signature else {
+            return false;
+        };
+        let signature = match merged {
+            Some((param, word)) => {
+                match crate::indirect::batch::merged_signature(&p.root, param, word) {
+                    Some(s) => s,
+                    None => {
+                        why("no command signature for a merged dispatch");
+                        return false;
+                    }
+                }
+            }
+            None => signature,
+        };
         let ran = match kind {
             DRAW | INDEXED => self.prepare(list, kind == INDEXED),
             MESH => self.prepare_for(list, false, true),
@@ -4777,6 +5236,11 @@ impl State {
                 counter.as_ref().map_or(0, |(s, at)| s.offset(*at)),
             )
         };
+        if let Some((param, word)) = merged {
+            // The word the signature set, back to what `bind` sets.
+            // SAFETY: an open list; the root signature has the word.
+            unsafe { list.list.SetComputeRoot32BitConstant(param, 0, word) };
+        }
         if kind == MESH {
             self.mesh_scissor(list, false);
         }

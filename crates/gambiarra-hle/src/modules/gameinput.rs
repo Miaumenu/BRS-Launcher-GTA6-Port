@@ -1260,20 +1260,7 @@ mod host {
             let list = std::env::var("GAMBIARRA_KEYS").unwrap_or_default();
             let keys = list.split(',').filter_map(|entry| {
                 let (at, key) = entry.split_once(':')?;
-                let vk = match key.trim() {
-                    "Enter" => 0x0D,
-                    "Esc" => 0x1B,
-                    "Tab" => 0x09,
-                    "Back" => 0x08,
-                    "Up" => 0x26,
-                    "Down" => 0x28,
-                    "Left" => 0x25,
-                    "Right" => 0x27,
-                    k if k.len() == 1 && k.as_bytes()[0].is_ascii_alphanumeric() => {
-                        k.as_bytes()[0].to_ascii_uppercase()
-                    }
-                    _ => return None,
-                };
+                let vk = key_code(key)?;
                 let time = |t: &str| Duration::try_from_secs_f64(t.trim().parse().ok()?).ok();
                 let (from, to) = match at.split_once('-') {
                     Some((from, to)) => (time(from)?, time(to)?),
@@ -1285,10 +1272,86 @@ mod host {
         });
         let (start, keys) = &*SCRIPT;
         let now = start.elapsed();
-        keys.iter()
+        let mut down: Vec<u8> = keys
+            .iter()
             .filter(|&&(from, to, _)| (from..to).contains(&now))
             .map(|&(_, _, vk)| vk)
-            .collect()
+            .collect();
+        if let Some(vk) = asked()
+            && !down.contains(&vk)
+        {
+            down.push(vk);
+        }
+        down
+    }
+
+    /// A key's virtual key code by its name in `GAMBIARRA_KEYS`.
+    fn key_code(name: &str) -> Option<u8> {
+        Some(match name.trim() {
+            "Enter" => 0x0D,
+            "Esc" => 0x1B,
+            "Tab" => 0x09,
+            "Back" => 0x08,
+            "Up" => 0x26,
+            "Down" => 0x28,
+            "Left" => 0x25,
+            "Right" => 0x27,
+            k if k.len() == 1 && k.as_bytes()[0].is_ascii_alphanumeric() => {
+                k.as_bytes()[0].to_ascii_uppercase()
+            }
+            _ => return None,
+        })
+    }
+
+    /// Debugging aid (diagnostics builds): `GAMBIARRA_KEYS_FILE=<file>`,
+    /// keys named as in `GAMBIARRA_KEYS`, one per line, pressed in order as
+    /// lines are there (lines there at the start too): each held for 0.2 s,
+    /// then 0.4 s up before the next. Appending a line drives a running
+    /// game without its window in front. After Belobug/VIctory-Belobug-AMD
+    /// (gameinput.rs, `VICTORY_KEYS_FILE`, GPL-3.0-or-later).
+    fn asked() -> Option<u8> {
+        struct Asked {
+            looked: Option<Instant>,
+            done: usize,
+            held: Option<(Instant, u8)>,
+        }
+        static ASKED: std::sync::Mutex<Asked> = std::sync::Mutex::new(Asked {
+            looked: None,
+            done: 0,
+            held: None,
+        });
+        static FILE: LazyLock<Option<std::ffi::OsString>> = LazyLock::new(|| {
+            std::env::var_os("GAMBIARRA_KEYS_FILE").filter(|_| cfg!(feature = "diagnostics"))
+        });
+        let file = FILE.as_ref()?;
+        let mut a = ASKED.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        if let Some((since, vk)) = a.held {
+            let age = now - since;
+            if age < Duration::from_millis(200) {
+                return Some(vk);
+            }
+            if age < Duration::from_millis(600) {
+                return None;
+            }
+            a.held = None;
+        }
+        if a.looked.is_some_and(|at| now - at < Duration::from_millis(100)) {
+            return None;
+        }
+        a.looked = Some(now);
+        let lines = std::fs::read_to_string(file).ok()?;
+        let name = lines.lines().nth(a.done)?.trim().to_owned();
+        a.done += 1;
+        let Some(vk) = key_code(&name) else {
+            if !name.is_empty() {
+                tracing::warn!(line = %name, "GAMBIARRA_KEYS_FILE: not a key; skipped");
+            }
+            return None;
+        };
+        tracing::info!(key = %name, "GAMBIARRA_KEYS_FILE: key pressed");
+        a.held = Some((now, vk));
+        Some(vk)
     }
 
     /// The foreground window is one of ours (the title's or our fallback).

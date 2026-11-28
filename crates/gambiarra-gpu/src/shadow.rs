@@ -3134,6 +3134,62 @@ pub(crate) fn window_use() -> [u64; 8] {
     out
 }
 
+/// For the memory-by-class line: the covered bytes of the windows alive
+/// (as [`windows`] counts them) split by the class the title asked for the
+/// memory ([`crate::memclass`]). Answers how much of the mirrored memory
+/// is write-combined (the CPU writes but never reads it, so it need not be
+/// copied back) against truly shared.
+#[cfg(feature = "diagnostics")]
+pub(crate) fn window_cover_by_class() -> [u64; crate::memclass::Class::COUNT] {
+    let mut out = [0u64; crate::memclass::Class::COUNT];
+    let loose = LOOSE.write().unwrap_or_else(|e| e.into_inner());
+    // Classify by the window's title start address (the map key), not by
+    // `asked[0]`: a window that nothing asked a sub-range of yet has
+    // `asked[0] == 0`, which would land every such window in `unknown`.
+    for (&(start, _len), s) in loose.iter() {
+        let low = s.asked[0].load(Ordering::Relaxed);
+        let high = s.asked[1].load(Ordering::Relaxed);
+        out[crate::memclass::classify(start).index()] += high.saturating_sub(low);
+    }
+    out
+}
+
+/// For the memory-by-class line: the covered bytes of the windows alive
+/// split by whether shaders ever wrote them. The mirrored memory is
+/// section-mapped, not `XMemVirtualAlloc`, so the title's protection class
+/// does not reach it (AMD study §14, Fase 1); the signal the layer does
+/// have is this one. `[0]` never written by the GPU: read-only input that
+/// the card could hold with no copy back, fed only by the CPU's writes.
+/// `[1]` written by the GPU: where the copy back lives.
+#[cfg(feature = "diagnostics")]
+pub(crate) fn window_cover_by_written() -> [u64; 2] {
+    let mut out = [0u64; 2];
+    let loose = LOOSE.write().unwrap_or_else(|e| e.into_inner());
+    for s in loose.values() {
+        let low = s.asked[0].load(Ordering::Relaxed);
+        let high = s.asked[1].load(Ordering::Relaxed);
+        let written = usize::from(s.written.load(Ordering::Relaxed));
+        out[written] += high.saturating_sub(low);
+    }
+    out
+}
+
+/// For the memory-by-class line: the bytes of the copies that live in the
+/// card's memory, split by the title's class ([`crate::memclass`]). Shows
+/// how much of what already sits on the card is each class.
+#[cfg(feature = "diagnostics")]
+pub(crate) fn carded_by_class() -> [u64; crate::memclass::Class::COUNT] {
+    let mut out = [0u64; crate::memclass::Class::COUNT];
+    let carded = CARDED.lock().unwrap_or_else(|e| e.into_inner());
+    for weak in carded.iter() {
+        if let Some(s) = weak.upgrade() {
+            let low = s.asked[0].load(Ordering::Relaxed);
+            out[crate::memclass::classify(low).index()] += s.len;
+        }
+    }
+    out
+}
+
 /// Lets go of the copies of windows outside buffers that nothing names any
 /// more. They were never freed, and the world's streaming keeps asking for
 /// new ones: 648 windows (2.8 GB) when the cutscene began, 974 (4.3 GB)
