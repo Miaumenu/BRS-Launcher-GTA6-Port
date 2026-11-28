@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Estudos técnicos — GambiarraLauncher</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10151d; --panel:#171f2a; --line:#2c3948; --text:#e8edf3; --muted:#aeb9c7; --blue:#77b7ff; --green:#7dd9ab; --yellow:#ffd37b; --red:#ff9696; }
+    * { box-sizing:border-box }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 system-ui,Segoe UI, sans-serif }
+    main { max-width:1080px; margin:auto; padding:32px 22px 70px }
+    h1,h2,h3 { line-height:1.25; letter-spacing:-.02em }
+    h1 { font-size:clamp(2rem,5vw,3.4rem); margin:.25em 0 }
+    h2 { margin-top:2.2em; padding-bottom:.4em; border-bottom:1px solid var(--line) }
+    h3 { margin-top:1.6em }
+    p,li { max-width:82ch }
+    a { color:var(--blue) }
+    code,pre { font-family:ui-monospace,Consolas,monospace }
+    code { overflow-wrap:anywhere; color:#c7e0ff }
+    pre { overflow:auto; background:#0b1016; border:1px solid var(--line); border-radius:10px; padding:16px; color:#d6e4f4 }
+    .kicker { color:var(--blue); font-weight:700; text-transform:uppercase; letter-spacing:.12em; font-size:.78rem }
+    .meta,.muted { color:var(--muted) }
+    .callout { background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:10px; padding:16px 18px; margin:20px 0 }
+    .callout.good { border-left-color:var(--green) }
+    .callout.caution { border-left-color:var(--yellow) }
+    .callout.unknown { border-left-color:var(--red) }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
+    .card h3 { margin:.15em 0 .5em }
+    table { width:100%; border-collapse:collapse; margin:16px 0; display:block; overflow-x:auto }
+    th,td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:10px 12px; min-width:140px }
+    th { background:#1c2734 }
+    .tag { font-size:.78rem; border:1px solid var(--line); border-radius:999px; padding:.1em .55em; white-space:nowrap }
+    .authorship { border:1px solid #8c6a25; border-left:5px solid #ffd166; background:#2a2416; color:#fff0bf; border-radius:10px; padding:15px 18px; margin:20px 0 }
+    .authorship strong { color:#ffe08a }
+    .status-pass { color:var(--green); font-weight:700 }
+    nav ul { columns:2; padding-left:1.2em }
+    footer { margin-top:3em; padding-top:1em; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem }
+    @media (max-width:600px) { main { padding:22px 15px 50px } nav ul { columns:1 } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">GambiarraLauncher · pesquisa de renderização e compatibilidade</div>
+    <h1>Estudos técnicos</h1>
+    <p class="meta">Revisão 3 · 28/11/2026 · relatório de pesquisa e validação do checkout</p>
+    <aside class="callout good" id="revisao-3"><strong>Revisão 3 (Claude, 28/11/2026): dois estudos novos.</strong> A situação mudou desde a revisão 2. Na Radeon RX 550, o título agora passa do boot, chega à abertura em 3D e a GPU trabalha a 80–96%, graças à troca de stubs pelas DLLs reais do pacote e a uma emulação de mesh shaders via compute. Os detalhes estão em dois documentos:
+      <ul>
+        <li><a href="estudo-via-amd-rx550.html"><strong>Via AMD (Radeon RX 550)</strong></a>: crashes e correções, arquitetura da emulação, medições, problemas em aberto, perfil <em>low</em> e plano de testes.</li>
+        <li><a href="estudo-via-nvidia.html"><strong>Via NVIDIA</strong></a>: por que o VIctory-NVIDIA e o AconteseNvidia rodam bem em RTX e o que deles dá para portar.</li>
+      </ul>
+      As seções abaixo são da revisão 2 (Codex). Onde elas dizem que a RX 550 "não alcançou o mundo", valia antes da revisão 3.</aside>
+    <aside class="authorship" id="codex-authorship"><strong>★ Trabalho desta IA — Codex</strong><br>Esta revisão foi escrita e executada por Codex a pedido do usuário. Codex aprofundou a análise, conferiu os arquivos-fonte, inspecionou metadados de game_scarlett_master.exe sem executá-lo nem extrair assets, executou os testes listados abaixo e atualizou este HTML. Os símbolos ★ neste documento identificam conteúdo produzido ou validado nesta revisão. O código de runtime não foi modificado nesta revisão.</aside>
+    <div class="callout good"><strong>Resumo da decisão.</strong> O preset GCN/Polaris já desliga o construtor de BVH e pede <code>ambient=1</code>. O efeito existente combina uma estimativa de luz indireta com uma oclusão de contato calculada pela profundidade — uma aproximação screen-space parecida com SSAO, já implementada em <code>ambient.rs</code>. Isso é um fallback prático para o custo e a compatibilidade do ray tracing, mas não reproduz sombras, reflexos ou iluminação global completos. No processador, o executável x86-64 já roda nativamente; a ponte é o carregador, os serviços HLE e a emulação de algumas instruções exclusivas do console, não um interpretador x86 inteiro.</div>
+  </header>
+
+  <nav class="card" aria-label="Índice">
+    <strong>Nesta página</strong>
+    <ul>
+      <li><a href="estudo-via-amd-rx550.html">★ Via AMD (RX 550) — revisão 3</a></li>
+      <li><a href="estudo-via-nvidia.html">★ Via NVIDIA — revisão 3</a></li>
+      <li><a href="#estado">O que o repositório prova</a></li>
+      <li><a href="#ssao">SSAO como alternativa ao ray tracing</a></li>
+      <li><a href="#cpu">Interpretador de CPU e ponte</a></li>
+      <li><a href="#plano">Plano de trabalho verificável</a></li>
+      <li><a href="#testes">Testes executados</a></li>
+      <li><a href="#limites">Limites e riscos</a></li>
+      <li><a href="#fontes">Fontes</a></li>
+      <li><a href="#mapa-unreal">Mapa e Unreal Engine</a></li>
+    </ul>
+  </nav>
+
+  <section id="estado">
+    <h2>1. ★ O que o repositório prova hoje</h2>
+    <div class="grid">
+      <article class="card"><h3>Ray tracing do título</h3><p>O jogo percorre estruturas BVH com seus próprios compute shaders e endereços de memória do console. O código da fork traduz parte desse caminho; não é uma chamada simples a DXR que possa ser trocada por um parâmetro de qualidade.</p></article>
+      <article class="card"><h3>Fallback de iluminação</h3><p><code>crates/gambiarra-gpu/src/ambient.rs</code> já tem passes de coleta, média temporal, reconstrução a partir da profundidade e oclusão em pequenas cavidades. A opção é controlada por <code>GAMBIARRA_AMBIENT</code>.</p></article>
+      <article class="card"><h3>Perfil da RX 550</h3><p><code>configs/presets/amd-gcn-no-mesh.toml</code> define <code>ambient = 1</code> e <code>bvh_builder = false</code>. Na revisão 2, a RX 550 não alcançava o mundo. <strong>Revisão 3:</strong> com a emulação de mesh shaders, a abertura em 3D roda com até ~5.000 draws/quadro, mas a cena ainda sai preta e o ritmo é de 0,6–0,9 fps. Ver <a href="estudo-via-amd-rx550.html">Via AMD</a>.</p></article>
+      <article class="card"><h3>Execução de CPU</h3><p><code>gambiarra-loader</code> mapeia o PE x86-64 como módulo nativo, resolve imports e inicia threads/TLS. APIs do console são atendidas por <code>gambiarra-hle</code>; não há interpretação de cada instrução do jogo.</p></article>
+    </div>
+    <p>O documento antigo <a href="../../docs/fork-ray-tracing.md">fork-ray-tracing.md</a> registra cerca de 40 ms por frame adicionais no único hardware medido com o construtor ligado. É uma medição daquela máquina/cena, não uma previsão universal nem uma medição da RX 550.</p>
+    <p>O relatório de execução desta placa está em <a href="investigacao-renderizacao-rx550-2026-11-27.md">investigacao-renderizacao-rx550-2026-11-27.md</a>. Como não houve renderização do mundo, ainda não há base válida para afirmar que SSAO reduz o tempo por frame nessa GPU ou que o preset já está visualmente validado nela.</p>
+  </section>
+
+  <section id="ssao">
+    <h2>2. ★ Colocar SSAO no lugar do ray tracing</h2>
+    <h3>O que “SSAO” substitui — e o que não substitui</h3>
+    <p>SSAO estima o quanto a geometria próxima bloqueia a luz ambiente, usando a profundidade visível na tela. É relativamente barato porque não percorre a cena inteira, mas só enxerga o que entrou no depth buffer. Geometria fora da tela ou escondida pela superfície não participa; por isso podem aparecer halos, bordas incorretas e variação temporal. SSAO escurece cantos e contatos. Sozinho, não calcula a cor que uma parede iluminada rebate para outro objeto, não cria sombras detalhadas de uma lâmpada e não produz reflexos.</p>
+    <p>No jogo estudado, “ray tracing” abrange várias tarefas: luz difusa indireta/probes, sombras de sol e lâmpadas e consultas às estruturas do mundo. Trocar todos esses resultados por SSAO mudaria o visual e deixaria partes sem substituto. A arquitetura mais segura é separar os objetivos: manter a estimativa de luz ambiente já existente para preencher a luz difusa e usar o termo de oclusão de profundidade apenas para cavidades/contato.</p>
+
+    <h3>O que o efeito existente já faz</h3>
+    <ol>
+      <li>Identifica os passes pelo nome do programa do jogo: coleta de radiância visível, resolução de probes e acumulação de luz no volume de ar.</li>
+      <li>Calcula uma estimativa direcional de luz indireta a partir da radiância na tela, agrega em células e suaviza no tempo. Isso é uma aproximação de iluminação indireta, não SSAO.</li>
+      <li>No passe <code>raise</code>, reconstrói posição a partir da profundidade, estima normal com vizinhos e amostra 12 pontos numa espiral dentro de um raio. A abertura local reduz a luz adicionada em áreas de contato e cavidades. Essa parcela é SSAO-like/oclusão screen-space, mas está embutida no fallback de iluminação; não é um filtro SSAO genérico aplicado ao color buffer.</li>
+      <li>Não executa enquanto <code>builder_runs()</code> está ativo. Assim o fallback não compete com os resultados do construtor de estruturas quando o usuário pede o caminho real.</li>
+    </ol>
+    <p>O nome da variável neste checkout é <code>GAMBIARRA_AMBIENT</code>. A imagem anexada usa a nomenclatura <code>VICTORY_AMBIENT</code>, que não corresponde ao código atual deste projeto. Para presets, o campo é <code>ambient</code>; para executar fora do preset, confirme primeiro como o launcher exporta variáveis.</p>
+
+    <h3>Recomendação técnica</h3>
+    <div class="callout"><strong>Usar o fallback existente como primeira opção.</strong> No preset já há <code>ambient=1</code> e <code>bvh_builder=false</code>. Antes de criar outro filtro, o próximo passo é fazer uma execução que realmente alcance o mundo numa GPU compatível e inspecionar o resultado do passe existente. Não habilitar o builder de BVH na RX 550: além do custo reportado, a placa não oferece mesh shaders para desenhar o mundo.</div>
+    <table>
+      <thead><tr><th>Objetivo visual</th><th>Técnica apropriada</th><th>Estado/verificação</th></tr></thead>
+      <tbody>
+        <tr><td>Preencher sombras com luz difusa aproximada</td><td>Estimativa de radiância e probes já implementada em <code>ambient.rs</code>.</td><td>Configurada pelo preset GCN; falta validar em imagem de mundo nesta GPU.</td></tr>
+        <tr><td>Escurecer contato e cavidades curtas</td><td>Amostragem screen-space de profundidade/normal já embutida no passe <code>raise</code>.</td><td>12 amostras; força e raio têm controle via <code>GAMBIARRA_AMBIENT_SHADE</code>.</td></tr>
+        <tr><td>Sombras de lâmpada e do sol, oclusão fora da tela, reflexos</td><td>BVH/ray tracing real ou outra solução específica por efeito.</td><td>Não é coberto por SSAO; builder continua experimental, desligado por padrão.</td></tr>
+        <tr><td>Melhorar custo por frame</td><td>Medir passes separadamente e reduzir resolução/amostras somente com imagem correta.</td><td>Sem benchmark válido da RX 550: não há cena de mundo renderizada no relatório atual.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Como validar sem confundir imagem com desempenho</h3>
+    <ol>
+      <li>Primeiro alcançar <code>world</code>, com draws acima de zero, numa GPU que exponha os recursos exigidos pelo caminho gráfico. A RX 550 observada não satisfaz mesh shader e o relatório também encontrou apenas Shader Model 6.5 no runtime testado.</li>
+      <li>Fixar cena, câmera, resolução e preset. Capturar três imagens: fallback desligado, preset atual e uma intensidade menor de crease shade. Comparar cavidades, bordas, objetos móveis e mudanças de câmera.</li>
+      <li>Medir custo do passe em execução separada, com cache aquecido; guardar frame time mediano e p95. O número anterior de ~40 ms era do construtor de BVH numa configuração medida e não estima o custo do SSAO.</li>
+      <li>Se houver artefato, variar uma coisa de cada vez: raio, força ou escala temporal. Manter valores seguros por preset e não anunciar ganho até medir.</li>
+    </ol>
+  </section>
+
+  <section id="cpu">
+    <h2>3. ★ “Interpretador do processador” e a ponte Xbox → PC</h2>
+    <h3>Não falta um interpretador x86-64 geral</h3>
+    <p>Xbox Series X|S e PCs modernos usam x86-64. O código principal do título pode executar diretamente no processador do PC; traduzir cada instrução para outra ISA seria desnecessário nesse alvo e acrescentaria custo e complexidade. O README de <code>gambiarra-loader</code> confirma essa estratégia: prepara uma cópia do PE, deixa o Windows mapear relocations/unwind/TLS, resolve imports por conta própria e executa entry point e callbacks nativamente.</p>
+    <pre>Executável x86-64 do título
+  ├─ instruções comuns ───────────────► CPU do PC (execução nativa)
+  ├─ instruções Zen 2 ausentes ───────► handler + emulação pontual
+  └─ imports Xbox/GDK/D3D12.X ────────► gambiarra-hle ─► APIs do Windows/D3D12
+                                                     └─► gambiarra-gpu / shader translator</pre>
+
+    <h3>O que já forma a ponte</h3>
+    <ul>
+      <li><code>gambiarra-loader</code>: mapeamento do executável e DLLs, TLS, threads, resolução de imports e relatório de falhas.</li>
+      <li><code>gambiarra-hle</code>: implementações de APIs do console, encaminhamento controlado a APIs do Windows e stubs explícitos para imports sem implementação.</li>
+      <li><code>gambiarra-gpu</code>: objetos e comandos D3D12.X traduzidos para D3D12 do host, recursos e memória espelhada.</li>
+      <li><code>gambiarra-shader</code>: tradução dos shaders GPU do Xbox para DXIL. Essa é a tradução de shaders, não uma tradução da CPU do título.</li>
+    </ul>
+    <p>Esse desenho aparece em <a href="../../docs/architecture.md">docs/architecture.md</a>. Os imports seguem uma ordem definida: HLE primeiro, depois host permitido, DLL do título e, por fim, stub que identifica a função ausente.</p>
+
+    <h3>Emulação pontual já presente</h3>
+    <p><code>gambiarra-loader/src/console_insn_decode.rs</code> identifica instruções que podem existir no Zen 2 do console e faltar em certas CPUs do PC. <code>console_insn.rs</code>, chamado pelo handler de exceção, implementa ou substitui casos específicos:</p>
+    <ul>
+      <li><code>CLWB</code>: tratado como operação sem efeito adicional na memória coerente do PC.</li>
+      <li><code>CLZERO</code> e um padrão reconhecido de loop: zera linhas/blocos; o loop pode ser convertido para stores comuns após a primeira exceção.</li>
+      <li><code>MONITORX/MWAITX</code>: espera é substituída por uma forma curta de spin/no-op; isso não reproduz a sincronização de hardware original.</li>
+      <li><code>RDPRU</code>: hoje devolve um contador baseado em <code>QueryPerformanceCounter</code>, não contadores APERF/MPERF idênticos ao hardware do console. É uma compatibilidade aproximada que pode afetar código que compara frequências/tempo.</li>
+      <li><code>RDPID</code>, <code>EXTRQ</code> e <code>INSERTQ</code>: transferem número do processador ou operam nos registradores XMM do contexto da exceção.</li>
+    </ul>
+    <p>O código também guarda regiões de memória consultadas para evitar custo repetido nas rotinas de <code>CLZERO</code>. Os comentários de implementação registram que consultar repetidamente páginas grandes via Windows foi muito caro em medições antigas; patches de loop e cache de respostas já reduzem essa sobrecarga.</p>
+
+    <h3>O que “resolver o interpretador” deve significar neste projeto</h3>
+    <div class="callout caution"><strong>Reformular o objetivo como auditoria da compatibilidade de CPU.</strong> Não iniciar um interpretador completo. Mapear as diferenças reais que impedem o título de prosseguir: instruções não suportadas, semântica de contadores/espera, imports sem HLE, convenção de chamadas, estado TLS/thread e características de CPU consultadas pelo jogo.</div>
+    <ol>
+      <li>Coletar logs por execução: instrução emulada e RIP, falha não tratada, import sem implementação e módulo chamador. Distinguir aviso esperado de falha fatal.</li>
+      <li>Para cada instrução faltante observada, confirmar encoding, largura, flags/registradores alterados e exceções esperadas; criar ou ampliar um teste unitário focado antes de mudar o handler.</li>
+      <li>Auditar <code>RDPRU</code> e waits separadamente. Definir a equivalência necessária pelo uso real do título, pois substituir um contador por outro pode afetar timeouts, scheduler ou telemetria.</li>
+      <li>Auditar imports do título. Cada função deve ter contrato de parâmetros, retorno, ownership e comportamento offline definidos; stubs que retornam zero não contam como ponte completa.</li>
+      <li>Reproduzir num sistema que passe da inicialização e confirmar o próximo marco (menu, carregamento, mundo). O relatório local da RX 550 ainda para antes desse diagnóstico funcional de mundo.</li>
+    </ol>
+  </section>
+
+  <section id="plano">
+    <h2>4. ★ Próximos passos sugeridos</h2>
+    <table>
+      <thead><tr><th>Ordem</th><th>Atividade</th><th>Evidência de conclusão</th></tr></thead>
+      <tbody>
+        <tr><td>1 · habilitar caminho compatível</td><td>Concluir auditoria das mudanças locais de Agility SDK e revalidar Shader Model no runtime/driver; escolher GPU que suporte mesh shaders para teste do mundo.</td><td>Log mostra runtime e recursos; preset selecionado; mundo alcançado e desenhado.</td></tr>
+        <tr><td>2 · checar iluminação atual</td><td>Inspecionar o passe ambient já existente com capturas controladas e confirmar preset/variáveis realmente exportadas.</td><td>Imagem reproduzível do fallback, sem builder de BVH; parâmetros registrados.</td></tr>
+        <tr><td>3 · medir e ajustar</td><td>Medir passe ambient separado; ajustar raio/força e, somente se necessário, adicionar resolução reduzida/blur temporal como opção por preset.</td><td>Frame time mediano/p95, comparação visual e custo de GPU em logs.</td></tr>
+        <tr><td>4 · auditar ponte CPU/HLE</td><td>Catalogar emulações de instrução, imports ausentes e diferenças de contrato observadas em execução.</td><td>Lista por módulo com estado: implementado, aproximação documentada, não implementado; testes das semânticas alteradas.</td></tr>
+        <tr><td>5 · alterar somente falhas reproduzidas</td><td>Implementar a menor correção localizada de HLE/CPU e repetir o mesmo cenário.</td><td>Falha reproduzida antes, marco alcançado depois, log e teste correspondente.</td></tr>
+      </tbody>
+    </table>
+    <p>Na data deste relatório, estes passos são uma proposta. Não alterei o comportamento do jogo nem afirmei que SSAO ou a compatibilidade de CPU tenham sido concluídos nesta edição.</p>
+  </section>
+
+  <section id="testes">
+    <h2>5. ★ Testes executados nesta revisão</h2>
+    <p>Os comandos foram executados no checkout Windows deste workspace com <code>--locked</code>. A validação automatizada cobre partes isoladas: semântica das opções de iluminação, criação dos passes D3D12 disponíveis e carregamento/emulação da ponte x86-64. Ela não equivale a uma sessão jogável nem a um benchmark do título.</p>
+    <table>
+      <thead><tr><th>Comando</th><th>Resultado</th><th>Cobertura</th><th>Limite</th></tr></thead>
+      <tbody>
+        <tr><td><code>cargo test --locked -p gambiarra-gpu ambient::tests</code></td><td class="status-pass">PASS — 3 aprovados, 0 falhas; 369 filtrados</td><td>Parsing das opções, identificação dos passes-alvo e criação dos shaders/pipelines do fallback no host disponível.</td><td>Não compara imagens do jogo, qualidade de iluminação na RX 550 nem tempo de GPU.</td></tr>
+        <tr><td><code>cargo test --locked -p gambiarra-loader</code></td><td class="status-pass">PASS — 42 aprovados (39 unitários + 2 de carregamento + 1 de DLL), 0 falhas</td><td>Decodificação, SSE4a no contexto, substituição de waits/CLZERO, exceções, TLS, threads, imports e fluxo do loader.</td><td>Não comprova compatibilidade total do jogo nem equivalência completa de timing/CPU do Zen 2.</td></tr>
+      </tbody>
+    </table>
+    <h3>Interpretação dos resultados</h3>
+    <ul>
+      <li><strong>O fallback compila neste ambiente.</strong> <code>ambient::tests::the_passes_build</code> passou, provando criação dos passes pelo caminho de teste disponível. Isso não prova que os descritores do jogo sejam válidos em todas as cenas nem que a imagem final esteja correta.</li>
+      <li><strong>A ponte de CPU tem testes localizados.</strong> O decoder e o handler passaram testes com memória criada para o teste e exceções simuladas. A cobertura se limita às instruções e cenários exercitados.</li>
+      <li><strong>Não há comparação antes/depois.</strong> Esta revisão não mudou código de runtime nem acrescentou SSAO; os testes descrevem componentes preexistentes.</li>
+      <li><strong>Não houve teste integrado gráfico com o jogo.</strong> O relatório da RX 550 registra <code>drawn=0</code>/<code>dispatched=0</code> e ausência de mesh shader. Essa máquina não valida o SSAO do mundo neste estado.</li>
+    </ul>
+    <h3>Reprodução</h3>
+    <pre>cd BRS-Launcher-GTA6-Port
+cargo test --locked -p gambiarra-gpu ambient::tests
+cargo test --locked -p gambiarra-loader</pre>
+    <p>O teste do crate gráfico emitiu avisos de código morto/atribuições, mas compilou e terminou com sucesso. Ambos os comandos retornaram código de saída 0. Nenhuma suíte foi criada ou modificada nesta revisão.</p>
+  </section>
+
+  <section id="limites">
+    <h2>6. Limites que precisam ficar explícitos</h2>
+    <ul>
+      <li>O efeito ambiente depende de nomes de shaders, posições de descritores, profundidade e convenções internas do título. Não é um pós-processamento universal, e atualizar o título pode quebrar essas suposições.</li>
+      <li>Uma imagem screen-space não contém geometria oculta ou fora do quadro. SSAO não pode gerar informação ausente.</li>
+      <li>O custo de 40 ms citado em <code>fork-ray-tracing.md</code> pertence ao builder de estruturas e à configuração documentada ali. Não deve ser comparado a SSAO sem medir a mesma cena, hardware, resolução e estado de cache.</li>
+      <li>A execução x86-64 nativa reduz a necessidade de um interpretador, mas não torna automaticamente APIs, timers, memória, afinidade de threads e instruções iguais às do console.</li>
+      <li>O relatório da RX 550 registra zero draws/dispatched para as execuções testadas. Portanto, não comprova aparência de SSAO no mundo nem desempenho de jogo.</li>
+      <li>O checkout contém modificações locais não relacionadas, incluindo trabalho de Agility SDK e HLE. Esta atualização preserva esses arquivos e adiciona somente este estudo.</li>
+    </ul>
+  </section>
+
+  <section id="fontes">
+    <h2>7. Fontes consultadas</h2>
+    <h3>Dentro do repositório</h3>
+    <ul>
+      <li><a href="../../docs/fork-ray-tracing.md">docs/fork-ray-tracing.md</a> — desenho do ray tracing do título, custo reportado e fallback de iluminação.</li>
+      <li><a href="../../crates/gambiarra-gpu/src/ambient.rs">crates/gambiarra-gpu/src/ambient.rs</a> — algoritmo, controles e amostragens screen-space implementadas.</li>
+      <li><a href="../../configs/presets/amd-gcn-no-mesh.toml">configs/presets/amd-gcn-no-mesh.toml</a> — configuração de ambient e BVH para GCN/Polaris sem mesh shader.</li>
+      <li><a href="../../docs/architecture.md">docs/architecture.md</a> — módulos, carregador, HLE, GPU e tradução de shaders.</li>
+      <li><a href="../../crates/gambiarra-loader/src/lib.rs">gambiarra-loader/src/lib.rs</a>, <a href="../../crates/gambiarra-loader/src/console_insn_decode.rs">console_insn_decode.rs</a> e <a href="../../crates/gambiarra-loader/src/console_insn.rs">console_insn.rs</a> — execução nativa e emulação seletiva de instruções.</li>
+      <li><a href="investigacao-renderizacao-rx550-2026-11-27.md">investigacao-renderizacao-rx550-2026-11-27.md</a> — evidência da RX 550, recursos D3D12 e limite das medições.</li>
+    </ul>
+    <h3>Referências públicas de renderização</h3>
+    <ul>
+      <li><a href="https://docs.imgtec.com/performance-guides/graphics-recommendations/html/topics/screen-space-ambient-occlusion.html">Imagination Technologies — Screen Space Ambient Occlusion</a>: forma básica do SSAO e amostragem de profundidade.</li>
+      <li><a href="https://animation.rwth-aachen.de/media/papers/2013-CADGraphics-MultilayerAO.pdf">RWTH Aachen — Screen-Space Ambient Occlusion Using A-buffer Techniques</a>: limitações de geometria ausente no G-buffer.</li>
+      <li><a href="https://developer.nvidia.com/blog/?p=28727">NVIDIA — Ray Traced Ambient Occlusion</a>: contraste entre aproximação SSAO e consultas de raio.</li>
+      <li><a href="https://learn.microsoft.com/windows/win32/direct3d12/pipelines-and-shaders-with-directx-12">Microsoft Learn — Pipelines and Shaders with Direct3D 12</a>: base da execução de compute/pipelines D3D12 no host.</li>
+    </ul>
+  </section>
+  <section id="mapa-unreal">
+    <h2>8. ★ Viabilidade de obter o mapa e levá-lo à Unreal Engine</h2>
+    <div class="callout caution"><strong>Conclusão objetiva: ainda não conseguimos com as ferramentas deste repositório.</strong> Não existe hoje um extrator de mundo nem um exportador para FBX, glTF/GLB ou um projeto Unreal. O GambiarraLauncher executa e traduz o runtime do jogo; isso não equivale a decodificar a representação de cenário em arquivos importáveis pelo editor.</div>
+
+    <h3>Verificações realizadas</h3>
+    <ul>
+      <li>A inspeção foi estática e somente de leitura. O CLI identificou <code>game_scarlett_master.exe</code> como um executável PE x64 de Windows GUI, com 120.181.760 bytes e 587 funções importadas de 68 DLLs.</li>
+      <li>Entre as dependências aparecem <code>xmem.dll</code>, <code>d3d12_xs.dll</code> e <code>XboxBvhBuilder.dll</code>, compatíveis com um título/runtime Xbox e caminho gráfico. Isso não demonstra que a geometria do mapa esteja dentro do executável nem que ela seja exportável.</li>
+      <li>O CLI oferece inspeção de PE, inventário de imports, busca/tradução de shaders, execução e replay gráfico. Não há comando de extração de modelos, mapas, malhas ou cenas.</li>
+      <li><code>gambiarra-game</code> implementa a leitura de registros <code>SGD5</code> que carregam shaders; sua lista de builds suportadas está vazia. <code>gambiarra-formats</code> cobre texturas do console, BCPack e XMA; não contém decodificador de malhas/cenários.</li>
+      <li>A regra <a href="../../docs/asset-policy.md">docs/asset-policy.md</a> proíbe armazenar no repositório assets do jogo e dados derivados, incluindo modelos, texturas extraídas, dumps e snapshots. Qualquer conversão permitida teria de gerar resultados fora do checkout e sob os direitos/licenças aplicáveis.</li>
+    </ul>
+    <p>O comando usado foi <code>target/debug/gambiarra-cli.exe inspect ..\game_scarlett_master.exe</code>. Ele leu cabeçalhos e imports; não executou o binário, não varreu arquivos de conteúdo, não decodificou seções de assets e não gerou cópia dos dados do mapa. O resultado confirma o tipo e as dependências do executável, não a presença ou ausência de um mapa nele.</p>
+
+    <h3>O que faltaria para uma conversão autorizada</h3>
+    <table>
+      <thead><tr><th>Etapa</th><th>Trabalho necessário</th><th>Critério de saída</th></tr></thead>
+      <tbody>
+        <tr><td>1. Localizar e identificar a fonte</td><td>Determinar qual arquivo/pacote contém dados de mundo e confirmar que ele é legível e pode ser convertido sem contornar DRM, criptografia ou controles de acesso.</td><td>Formato, versão e origem documentados; entrada autorizada e reproduzível.</td></tr>
+        <tr><td>2. Decodificar a cena</td><td>Implementar parser para terreno, malhas/meshlets, índices e vértices, transforms, instâncias, níveis de detalhe, colisões e referências de materiais.</td><td>Contagens e limites geométricos coerentes; parser com verificações de limites e testes sintéticos.</td></tr>
+        <tr><td>3. Converter recursos visuais</td><td>Descomprimir e desfazer o tiling de texturas; reconstruir materiais. Shaders do jogo não se tornam materiais Unreal automaticamente, então seriam necessários materiais substitutos.</td><td>Texturas lineares e materiais mapeados a parâmetros conhecidos, sem depender de shaders proprietários.</td></tr>
+        <tr><td>4. Exportar formatos de intercâmbio</td><td>Gerar glTF/GLB ou FBX para malhas/instâncias, ou uma ferramenta da Unreal para criar meshes e Landscape. Ajustar unidades, eixos, pivôs, UVs e colisão.</td><td>Arquivos pequenos de teste importados sem perda de escala/orientação e com geometria validada.</td></tr>
+        <tr><td>5. Montar e validar o nível</td><td>Reconstituir particionamento, streaming, LOD, iluminação, colisão e materiais no projeto Unreal de destino.</td><td>Uma área pequena reproduzível, comparada à fonte e validada no editor; depois escalar por setores.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Riscos e limites técnicos</h3>
+    <ul>
+      <li>O mapa pode estar em pacotes externos, formatos proprietários, arquivos compactados ou conteúdo protegido. A inspeção do executável sozinha não determina qual caso se aplica.</li>
+      <li>Mesh shaders são programas que desenham geometria, não os dados de vértices. Traduzir shaders ou capturar comandos gráficos não entrega automaticamente um mapa limpo, navegável e com hierarquia para Unreal.</li>
+      <li>Uma captura de frame pode ajudar no diagnóstico visual, mas não reconstitui geometria fora da tela, colisões, terreno editável ou estrutura de streaming.</li>
+      <li>Assets convertidos continuam sendo derivados do jogo e não devem ser colocados neste repositório. O projeto de destino e o uso precisam respeitar os direitos do conteúdo.</li>
+    </ul>
+    <p><strong>Próximo passo técnico:</strong> se houver uma fonte de mapa sem proteção e permitida para conversão — por exemplo, um formato de autoria própria ou pacote documentado que você tem direito de exportar — começar por uma amostra mínima e criar testes sintéticos para o parser/exportador. O executável inspecionado ainda não dá base para extrair o mapa nem prometer conversão direta para Unreal.</p>
+  </section>
+  <footer><strong>★ Revisão preparada por Codex.</strong> Este documento separa evidências do checkout, testes automatizados, inspeção estática do executável, medições anteriores e propostas. Um teste unitário aprovado ou uma recomendação não equivale a um recurso validado em jogo.</footer>
+</main>
+</body>
+</html>

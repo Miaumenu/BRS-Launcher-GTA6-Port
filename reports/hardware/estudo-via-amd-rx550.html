@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Estudo — via AMD (Radeon RX 550)</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10151d; --panel:#171f2a; --line:#2c3948; --text:#e8edf3; --muted:#aeb9c7; --blue:#77b7ff; --green:#7dd9ab; --yellow:#ffd37b; --red:#ff9696; --amd:#ff7b7b; }
+    * { box-sizing:border-box }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 system-ui,Segoe UI,sans-serif }
+    main { max-width:1080px; margin:auto; padding:32px 22px 70px }
+    h1,h2,h3 { line-height:1.25; letter-spacing:-.02em }
+    h1 { font-size:clamp(2rem,5vw,3.2rem); margin:.25em 0 }
+    h2 { margin-top:2.2em; padding-bottom:.4em; border-bottom:1px solid var(--line) }
+    h3 { margin-top:1.6em }
+    p,li { max-width:82ch }
+    a { color:var(--blue) }
+    code,pre { font-family:ui-monospace,Consolas,monospace }
+    code { overflow-wrap:anywhere; color:#c7e0ff }
+    pre { overflow:auto; background:#0b1016; border:1px solid var(--line); border-radius:10px; padding:16px; color:#d6e4f4 }
+    .kicker { color:var(--amd); font-weight:700; text-transform:uppercase; letter-spacing:.12em; font-size:.78rem }
+    .meta,.muted { color:var(--muted) }
+    .callout { background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:10px; padding:16px 18px; margin:20px 0 }
+    .callout.good { border-left-color:var(--green) }
+    .callout.caution { border-left-color:var(--yellow) }
+    .callout.unknown { border-left-color:var(--red) }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
+    .card h3 { margin:.15em 0 .5em }
+    .num { font-size:1.9rem; font-weight:800; letter-spacing:-.02em }
+    table { width:100%; border-collapse:collapse; margin:16px 0; display:block; overflow-x:auto }
+    th,td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:10px 12px; min-width:120px }
+    th { background:#1c2734 }
+    .ok { color:var(--green); font-weight:700 } .open { color:var(--yellow); font-weight:700 } .bad { color:var(--red); font-weight:700 }
+    .authorship { border:1px solid #6b2e2e; border-left:5px solid var(--amd); background:#281515; color:#f7dede; border-radius:10px; padding:15px 18px; margin:20px 0 }
+    nav ul { columns:2; padding-left:1.2em }
+    footer { margin-top:3em; padding-top:1em; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem }
+    @media (max-width:600px) { main { padding:22px 15px 50px } nav ul { columns:1 } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">GambiarraLauncher · máquina de referência AMD</div>
+    <h1>Via AMD: do travamento no boot à abertura em 3D numa Radeon RX 550</h1>
+    <p class="meta">Revisão 2 · 28/11/2026 · resultados medidos nesta máquina, mudanças ainda não commitadas</p>
+    <div class="callout unknown"><strong>Revisão 2: o diagnóstico mudou.</strong> Uma escada de cortes (seção 9) mostrou que tirar <em>todos</em> os compute shaders do jogo quase não acelera o quadro. O fps baixo vem da memória separada do PC: buffers do jogo espelhados na RAM e lidos pela placa pelo barramento, VRAM a 176% do orçamento e o vai-e-volta de cópias entre CPU e GPU (seção 10). As seções 11 e 12 avaliam as ideias da conversa sobre memória e shaders e trazem o plano de ataque.</div>
+    <aside class="authorship"><strong>Trabalho desta IA — Claude.</strong> Diagnóstico, correções e emulação de mesh shaders feitos nas sessões de 27 e 28/11/2026, a pedido do usuário. Os números vêm dos logs do próprio launcher (build <code>diag</code>) e de contadores do Windows. Nenhum dump ou telemetria foi enviado para fora: o upload de crash do título continua bloqueado.</aside>
+    <div class="callout good"><strong>Resumo executivo.</strong> O título passou de "trava no System Init" para "roda a abertura em 3D por mais de 4 minutos sem cair". Quatro crashes tinham a mesma família de causa: stubs de DLLs do título que respondiam "OK" sem preencher a resposta. Foram substituídos pelas DLLs reais do pacote. Para a placa, que não tem mesh shaders, foi escrita uma emulação que roda cada mesh shader como compute <em>na própria GPU</em> e desenha o resultado. Agora a GPU trabalha de verdade (80–96%), mas o quadro ainda sai quase preto e o ritmo é de 0,6–0,9 fps. O gargalo atual está na CPU e na memória de vídeo, não no tradutor.</div>
+  </header>
+
+  <div class="grid">
+    <div class="card"><div class="muted">Draws por quadro</div><div class="num">~280 → ~5.000</div></div>
+    <div class="card"><div class="muted">Uso da GPU</div><div class="num">~24% → 80–96%</div></div>
+    <div class="card"><div class="muted">Pipelines de mesh</div><div class="num">0 → ~150</div><div class="muted">emulados e aceitos</div></div>
+    <div class="card"><div class="muted">Estabilidade</div><div class="num">270 s</div><div class="muted">sem crash na abertura</div></div>
+  </div>
+
+  <nav class="card" aria-label="Índice" style="margin-top:20px">
+    <strong>Nesta página</strong>
+    <ul>
+      <li><a href="#maquina">Máquina de referência</a></li>
+      <li><a href="#correcoes">Crashes e correções</a></li>
+      <li><a href="#mesh">Emulação de mesh shaders</a></li>
+      <li><a href="#medicoes">Medições</a></li>
+      <li><a href="#abertos">Problemas em aberto</a></li>
+      <li><a href="#low">Perfil low (ponto de partida)</a></li>
+      <li><a href="#testes">Plano de testes</a></li>
+      <li><a href="#riscos">Riscos e limites</a></li>
+      <li><a href="#quadro">Onde vai o quadro (escada de cortes)</a></li>
+      <li><a href="#memoria">Onde está a memória</a></li>
+      <li><a href="#ideias">Ideias da conversa: o que procede</a></li>
+      <li><a href="#ataque">Plano de ataque</a></li>
+      <li><a href="#herdado">Temas trazidos de "Estudos técnicos"</a></li>
+      <li><a href="#kit">O "kit de desenvolvimento" e a memória que o jogo pede</a></li>
+      <li><a href="#execucao">Plano de execução detalhado</a></li>
+      <li><a href="#wave64">Experimento encerrado: wave32→64</a></li>
+    </ul>
+  </nav>
+
+  <section id="maquina">
+    <h2>1. Máquina de referência</h2>
+    <table>
+      <thead><tr><th>Item</th><th>Valor</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>GPU</td><td>Radeon RX 550, 2 GB (Polaris / GCN 4)</td><td>Sem mesh shaders, só ondas de 64, sem rasterização conservadora, sem <code>SV_Barycentrics</code>.</td></tr>
+        <tr><td>Driver</td><td>AMD 31.0.12029.10015 (29/11/2022)</td><td>Defasado; existe Adrenalin mais novo para a RX 550.</td></tr>
+        <tr><td>Runtime D3D12</td><td>Agility SDK 618 (<code>target\diag\D3D12\D3D12Core.dll</code>)</td><td>Habilita Shader Model 6.6 no Windows 10. A pasta não traz a camada de depuração (<code>d3d12SDKLayers.dll</code>).</td></tr>
+        <tr><td>CPU / RAM</td><td>Ryzen 7 3700X / ~24 GB</td><td>Com o mundo carregando, o processo chega a ~12 GB de RAM privada.</td></tr>
+        <tr><td>Sistema</td><td>Windows 10 19045</td><td>—</td></tr>
+        <tr><td>Pacote do título</td><td><code>game-dump\</code> (versão 1.0.2.1, Series)</td><td><code>gambiarra-cli.toml</code> → <code>game_dir</code> aponta para cá.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="correcoes">
+    <h2>2. Crashes e correções, em ordem</h2>
+    <table>
+      <thead><tr><th>#</th><th>Sintoma</th><th>Causa encontrada</th><th>Correção</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>INT3 em <code>+0x2237178</code> no System Init</td><td>O <code>G:</code> virtual apontava para uma pasta só com o exe. O título monta a lista de busca <code>"G:/"</code> e checa a raiz, e o pacote não estava lá.</td><td><code>game_dir</code> → <code>game-dump</code> no <code>gambiarra-cli.toml</code> local.</td><td class="ok">Resolvido</td></tr>
+        <tr><td>2</td><td>INT3 em <code>+0x56ABFA5</code></td><td>Stub do <code>XboxBvhBuilder</code> não preenchia o <code>GetRaytracingAccelerationStructurePrebuildInfo</code>. Tamanho 0 levava a alocação nula, que disparava o assert.</td><td>A DLL real do pacote é usada; os estágios dela na GPU continuam desligados (<code>GAMBIARRA_BVH_BUILDER=0</code>).</td><td class="ok">Resolvido</td></tr>
+        <tr><td>3</td><td>Tela inicial preta</td><td>Stub do Bink sempre respondia "sem vídeo".</td><td>DLL <code>Bink2Scarlett.dll</code> real.</td><td class="ok">Resolvido</td></tr>
+        <tr><td>4</td><td>Divisão por zero em <code>+0x28F03E8</code></td><td>Stub <code>ffxQuery</code> não escrevia o número de fases do jitter do FSR, e o título fazia <code>quadro % 0</code>.</td><td>Loader e upscaler FSR reais do pacote.</td><td class="ok">Resolvido</td></tr>
+        <tr><td>5</td><td>Escrita proposital em <code>[0]</code> (vigia "GPU Loc Sig")</td><td>Quadros de 5 a 7 s: mundo sem mesh shaders e VRAM estourada. O próprio título encerra o processo quando a GPU demora.</td><td>Emulação de mesh shaders (seção 3).</td><td class="ok">Não se repetiu em 270 s</td></tr>
+        <tr><td>6</td><td>Pipelines recusados (<code>E_INVALIDARG</code>)</td><td>Pediam rasterização conservadora, que a placa não tem.</td><td><code>Host::rasterizer</code> desliga o recurso quando o host não o suporta.</td><td class="ok">Resolvido (aproximado)</td></tr>
+        <tr><td>7</td><td>Validador recusava o PSV dos shaders</td><td>Nomes semânticos repetidos (dois <code>TEXCOORD</code>) eram reaproveitados na tabela de strings.</td><td><code>container::psv</code> grava um nome por elemento.</td><td class="ok">Resolvido; corrigiu também o <code>rect.rs</code> antigo</td></tr>
+      </tbody>
+    </table>
+    <div class="callout caution"><strong>Lição de processo.</strong> Os arquivos de stub em <code>gambiarra-hle/src/modules/scarlett.rs</code> foram criados quando o pacote não estava no <code>G:</code>. Com o pacote presente, a DLL real do título funciona melhor do que qualquer stub. Hoje só o <code>libHttpClient.GDK.dll</code> continua em stub, para manter o jogo offline. A via NVIDIA chegou à mesma conclusão: usa as DLLs reais de Bink e FidelityFX, com uma camada na frente.</div>
+  </section>
+
+  <section id="mesh">
+    <h2>3. Emulação de mesh shaders</h2>
+    <p>Placas sem mesh shaders não executam ~35% dos shaders do título. A emulação mantém todo o trabalho na GPU:</p>
+    <pre>DispatchMesh(n) do título
+  └─► mesh shader traduzido como COMPUTE (mesmo código, cs_6_6)
+        cada lane grava o seu vértice e a sua primitiva num buffer da GPU
+  └─► barreira UAV → leitura
+  └─► DrawInstanced(n × maxPrim × 3) com o VERTEX SHADER LEITOR nosso
+        lê canto k da primitiva p, entrega ao pixel shader original do título
+
+DispatchMeshX indireto (contagem na memória da GPU)
+  └─► passe conversor (HLSL cs_5_1): lê n, reserva espaço num anel na GPU,
+        escreve os dois comandos → ExecuteIndirect(compute) + ExecuteIndirect(draw)</pre>
+    <table>
+      <thead><tr><th>Onde</th><th>O quê</th></tr></thead>
+      <tbody>
+        <tr><td><code>gambiarra-shader/src/emit/lower.rs</code></td><td>Modo <code>with_mesh_as_compute</code>: <code>storeVertexOutput</code>/<code>storePrimitiveOutput</code>/<code>emitIndices</code> viram gravações em buffer; o id do grupo soma uma base (dispatch em partes).</td></tr>
+        <tr><td><code>gambiarra-shader/src/emit/mesh_reader.rs</code></td><td>Vertex shader leitor; a assinatura de saída é a entrada do pixel shader do título, com a interpolação do próprio PS.</td></tr>
+        <tr><td><code>gambiarra-gpu/src/pipeline/host.rs</code></td><td><code>emulated_mesh</code>: duas metades (PSO compute + PSO desenho) sobre duas assinaturas raiz.</td></tr>
+        <tr><td><code>gambiarra-gpu/src/draw.rs</code></td><td><code>dispatch_mesh_emulated</code> (direto) e <code>mesh_indirect_emulated</code> (indireto).</td></tr>
+        <tr><td><code>gambiarra-gpu/src/mesh.rs</code></td><td>Buffer de saída compartilhado (anel), conversor e <em>command signatures</em>.</td></tr>
+      </tbody>
+    </table>
+    <p>Controles: <code>GAMBIARRA_MESH_EMULATION=0</code> desliga (volta a descartar); <code>GAMBIARRA_MESH_SCRATCH_MB</code> define o buffer (padrão 64 MB: metade para chamadas diretas, metade para indiretas).</p>
+    <p>Testes automatizados: <code>mesh_programs_run_as_compute</code>, <code>the_reader_outputs_what_the_pixel_shader_reads</code> e <code>a_mesh_program_without_a_position_is_refused</code> passam, com validação pelo <code>dxil.dll</code> do Windows SDK. A suíte do tradutor caiu de 37 para 34 falhas, todas preexistentes e de testes que exigem SM 6.6 na placa fora do launcher.</p>
+  </section>
+
+  <section id="medicoes">
+    <h2>4. Medições</h2>
+    <table>
+      <thead><tr><th>Momento</th><th>Draws/quadro</th><th>GPU</th><th>Ritmo</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>Tela inicial (antes do A)</td><td>1–11</td><td>24–43%</td><td>30 fps</td><td>Espera de entrada; CPU ~1%.</td></tr>
+        <tr><td>Mundo, sem emulação</td><td>~280</td><td>~24%, caindo a 0%</td><td>0,1–0,2 fps</td><td>Quadros de 5–7 s; vigia do título encerrou o processo numa execução.</td></tr>
+        <tr><td>Mundo, com emulação</td><td>2.000–5.000</td><td>80–96%</td><td>0,6–0,9 fps</td><td>Sem crash em 270 s.</td></tr>
+      </tbody>
+    </table>
+    <h3>Para onde vai o tempo de um quadro lento (antes da emulação)</h3>
+    <table>
+      <thead><tr><th>Etapa</th><th>Tempo</th></tr></thead>
+      <tbody>
+        <tr><td>Gravação de ~32 mil chamadas de lista (CPU, nossa camada)</td><td>~5.000 ms</td></tr>
+        <tr><td>Cópias da memória do título para a placa (181 MB)</td><td>~1.100 ms</td></tr>
+        <tr><td>Cópia de volta (14 MB)</td><td>~500 ms</td></tr>
+        <tr><td>Trabalho real na GPU</td><td>~400 ms</td></tr>
+      </tbody>
+    </table>
+    <p>VRAM: 3.026 MB em uso para um orçamento de 1.723 MB. O excedente fica na RAM e é copiado ou comparado a cada quadro.</p>
+  </section>
+
+  <section id="abertos">
+    <h2>5. Problemas em aberto</h2>
+    <table>
+      <thead><tr><th>Problema</th><th>Evidência</th><th>Hipótese de trabalho</th></tr></thead>
+      <tbody>
+        <tr><td class="open">Cena 3D preta</td><td><strong>Investigado 28/11 (via <code>GAMBIARRA_WALLS_TRACE=1</code>):</strong> os read-backs do medidor de exposição/luminância chegam ao título com valores <strong>não-zero e até altos</strong> (luminância média ~25–85; picos ~8.800–9.000). <code>GAMBIARRA_AMBIENT=0</code> não muda nada. O despejo de alvos (RTV) só pega buffers vazios, inclusive profundidade.</td><td><strong>A hipótese do "passe de iluminação zerado" caiu:</strong> a luz existe. O preto entra <em>depois</em>, na cadeia tonemap→exposição→composite. Suspeito principal: a <strong>exposição automática</strong> lê luminância anormalmente alta (~8.800, onde uma cena normal teria ~1–10) e comprime a imagem para quase-preto. Próximo: forçar/clampar a exposição (passes <code>PS_CalculateExposure</code>/<code>PS_ResetExposure</code>, o medidor <code>PS_ComputeBilateralGridBaseLogLuminance</code>) e ver se a cena aparece; ou dumpar a entrada/saída do <code>PS_Composite</code>.</td></tr>
+        <tr><td class="open">0,6–0,9 fps</td><td>GPU ocupada, mas o custo dominante medido é CPU (gravação de comandos) e cópias de memória.</td><td>Reduzir resolução, juntar execuções indiretas, aquecer o cache de pipelines. <strong>Atualizado (rev. 2):</strong> a escada de cortes mostrou que a causa é a memória separada e o vai-e-volta de cópias, não os shaders. Ver seções 9, 10 e 12.</td></tr>
+        <tr><td class="open">~400 draws/quadro descartados</td><td>Pixel shaders que leem <code>SV_Barycentrics</code>.</td><td>Emular no leitor: ele sabe o canto (k = 0, 1, 2) e pode entregar (1,0,0), (0,1,0), (0,0,1) como atributo interpolado.</td></tr>
+        <tr><td class="open">~640 draws/quadro perdidos na 1ª execução</td><td>Pipelines "sendo compilados".</td><td>Preparo de shaders antes de jogar; segunda execução já usa a biblioteca.</td></tr>
+        <tr><td class="open">VRAM estourada</td><td>3 GB pedidos, 1,7 GB disponíveis.</td><td>Resolução menor, orçamento de textura menor. <strong>Atualizado (rev. 2):</strong> as texturas do jogo são só 245 MB; o peso está nos alvos de tamanho fixo (1 GB) e nos buffers espelhados (2,4 GB na RAM). Ver seção 10.</td></tr>
+        <tr><td class="bad">Ray tracing</td><td>Construtor de BVH desligado (~1.246 dispatches/quadro descartados por desenho).</td><td>Manter desligado nesta placa.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="low">
+    <h2>6. Perfil low: ponto de partida</h2>
+    <div class="callout caution"><strong>Hardware modesto: deixar tudo no mínimo para não explodir.</strong> A prioridade é estabilidade e diagnóstico, não qualidade visual. Cada item abaixo diminui trabalho de GPU, VRAM ou CPU.</div>
+    <table>
+      <thead><tr><th>Ajuste</th><th>Valor low</th><th>Efeito esperado</th><th>Já existe?</th></tr></thead>
+      <tbody>
+        <tr><td>Modelo de console</td><td>Series S</td><td>Orçamentos de memória menores no próprio título.</td><td class="ok">Sim (preset)</td></tr>
+        <tr><td>Resolução da TV vista pelo título</td><td><code>GAMBIARRA_DISPLAY_MODE=1280x720</code></td><td>Saída 720p em vez de 1080p; o upscaler do título renderiza menos. Menos GPU e menos VRAM.</td><td class="open">Sim, mas colide com o preset (ver nota)</td></tr>
+        <tr><td>Orçamento de texturas</td><td><code>GAMBIARRA_TEXTURE_BUDGET_MB=900</code></td><td>Deixa espaço na VRAM para o resto.</td><td class="ok">Sim (preset usa 1.400)</td></tr>
+        <tr><td>Construtor de BVH</td><td>desligado</td><td>Evita ~40 ms/quadro e milhares de dispatches.</td><td class="ok">Sim</td></tr>
+        <tr><td>Buffer da emulação de mesh</td><td><code>GAMBIARRA_MESH_SCRATCH_MB=32</code></td><td>Menos VRAM fixa; dispatches maiores vão em partes.</td><td class="ok">Sim</td></tr>
+        <tr><td>Vídeos de abertura</td><td>pular</td><td>Boot mais curto, menos memória.</td><td class="bad">Não (portar da via NVIDIA)</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Nota sobre a colisão:</strong> o preset <code>amd-gcn-no-mesh</code> grava <code>display_mode = "borderless"</code> na variável <code>GAMBIARRA_DISPLAY_MODE</code>, que o lado DXGI lê como <em>tamanho</em>. "borderless" não é um tamanho válido, então o título recebe o padrão de 3840×2160. É preciso separar as duas funções da variável antes de fixar 720p pelo preset.</p>
+  </section>
+
+  <section id="resultados-low">
+    <h2>6b. Resultados do perfil low (28/11/2026)</h2>
+    <p>A colisão de <code>GAMBIARRA_DISPLAY_MODE</code> foi corrigida: o preset ganhou <code>display_size = "LarguraxAltura"</code>, validado ao ler o arquivo, e o antigo <code>display_mode</code>, que nenhum código lia, saiu. Mesma sequência de teclas, mesma máquina, emulação de mesh ligada.</p>
+    <table>
+      <thead><tr><th>Teste</th><th>Ajustes</th><th>Resultado</th><th>ms/quadro no mundo</th></tr></thead>
+      <tbody>
+        <tr><td>Antes</td><td>TV 3840×2160 (padrão), textura 1.400 MB</td><td>Estável 270 s</td><td>~1.100–1.700</td></tr>
+        <tr><td>L1</td><td>TV 1280×720, textura 1.400 MB</td><td class="bad">Caiu aos ~260 s: <code>E_OUTOFMEMORY</code> ao fechar uma lista (4.030 MB usados para 1.667 de orçamento)</td><td>774–3.150</td></tr>
+        <tr><td>L1 + L3</td><td>TV 1280×720, textura 700 MB, buffer de mesh 32 MB</td><td class="ok">Estável 300 s; mundo alcançado no quadro 2.041</td><td>1.010–2.690 (~1 fps)</td></tr>
+      </tbody>
+    </table>
+    <p>O preset <code>amd-gcn-no-mesh</code> agora grava <code>display_size = "1280x720"</code> e <code>texture_budget_mb = 700</code>. A cena 3D continua escura com 720p: a resolução não é a causa.</p>
+    <h3>Memória que cresce</h3>
+    <p>Na execução L1 + L3, a VRAM dedicada ficou presa no teto (~1,6 GB), enquanto a memória <em>compartilhada</em> da GPU (RAM do sistema usada pela placa) subiu de 1,7 GB para ~11 GB em 4 minutos e então estabilizou entre 11,0 e 11,4 GB. O padrão de subir e parar aponta para cópias e caches que crescem até um teto, não para um vazamento sem fim. Para confirmar, falta uma execução de 10 minutos ou mais. Se a curva voltar a subir depois do platô, é vazamento.</p>
+    <h3>Passo 1: 480p e corte de passes (28/11/2026, tarde)</h3>
+    <p>Depois da arte de carregamento, o título passou a mostrar a tela <em>Termos e Políticas</em>. Com autorização do usuário, o pad virtual marca as duas caixas e confirma (<code>GAMBIARRA_KEYS=…56:Enter,60:Down,64:Enter,68:Down,72:Enter</code>). Novo interruptor de diagnóstico: <code>GAMBIARRA_SKIP_PASSES=Shadow,Fog,…</code> pula todo pipeline cujo shader cita um nome de programa que contém o trecho. Passes de <em>culling</em> nunca são pulados.</p>
+    <table>
+      <thead><tr><th>Teste</th><th>Ajustes (todos com textura 700 MB e buffer 32 MB)</th><th>Resultado</th><th>ms/quadro no mundo</th></tr></thead>
+      <tbody>
+        <tr><td>P0</td><td>TV 854×480, nada cortado</td><td class="ok">Estável 240 s; cena com cor</td><td>1.600–2.100, dos quais 1.270–1.840 na GPU</td></tr>
+        <tr><td>P1</td><td>480p, corta sombra, volume, névoa, nuvem, SSR, bloom, DOF, motion blur, partículas, RT</td><td class="bad">GPU parou de responder (TDR) logo ao entrar no mundo</td><td>—</td></tr>
+        <tr><td>P2</td><td>480p, corta só volume, névoa, nuvem, bloom, DOF, motion blur</td><td class="bad">TDR no mesmo ponto</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Conclusões.</strong></p>
+    <ul>
+      <li>480p não muda o quadro de forma clara, porque o custo não está nos pixels.</li>
+      <li>Cortar passes às cegas trava a placa: os passes seguintes leem contagens e listas que o passe cortado deveria ter escrito. Cortar passes só funciona trocando a saída do passe por um valor neutro, e não simplesmente pulando a chamada.</li>
+      <li>O gargalo agora é o tempo de GPU (≈1,5 s por quadro). Cada mesh emulado faz compute, depois uma barreira UAV→SRV e depois o draw. Com ~1.000 a 1.600 chamadas por quadro, essas barreiras esvaziam a placa a cada chamada. Isso torna o agrupamento por passe (passo 2) o próximo ganho mais provável.</li>
+      <li>Na tela do usuário a janela ficava branca: o Windows trocava a janela por um "fantasma" de "não respondendo" quando um quadro demorava mais de 5 s. Agora o processo desliga esse fantasma (<code>DisableProcessWindowsGhosting</code>).</li>
+    </ul>
+    <h3>Onde a GPU gasta o quadro (medição por pipeline)</h3>
+    <p>Com <code>GAMBIARRA_GPU_TIMING=1 GAMBIARRA_D3D12_DRED=1</code>, cada comando ganha timestamps da própria placa. Num quadro do mundo, a placa trabalha cerca de 1.000 a 1.100 ms:</p>
+    <table>
+      <thead><tr><th>O quê</th><th>ms por quadro</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>Família <code>CS_Gather_Classified_N</code> (iluminação por blocos classificados, indireta)</td><td>70–500 <em>cada</em> variante</td><td>Uma única chamada chegou a 497 ms. É o maior custo do quadro.</td></tr>
+        <tr><td><code>CS_GatherRaymarchedLocalLightsClassified16</code></td><td>~190</td><td>Luzes locais com ray marching</td></tr>
+        <tr><td><code>CS_CloudMultiScatteringCache</code></td><td>~90</td><td>Nuvens</td></tr>
+        <tr><td>Toda a emulação de mesh (compute + draw)</td><td>40–112</td><td>Cerca de 10% do quadro</td></tr>
+        <tr><td>Barreiras da emulação (teste <code>GAMBIARRA_MESH_RACY=1</code>, sem barreiras)</td><td>−20 a −30% do tempo de GPU, com muito ruído</td><td>Ganho real, mas não muda a ordem de grandeza</td></tr>
+      </tbody>
+    </table>
+    <p>Pular os três gathers mais pesados por hash é estável (220 s sem TDR) e baixa o total de ~1.050 para ~900 ms, mas outras variantes da mesma família assumem o topo. <strong>Consequência para o plano:</strong> o agrupamento da emulação de mesh (passo 2) rende no máximo uns 10%. A alavanca grande é descobrir por que um gather de iluminação leva centenas de ms numa placa 4× mais fraca que o Series S, quando deveria levar alguns ms. Os suspeitos são a tradução desses shaders (operações de onda pensadas para wave32 rodando em wave64, laços, LDS) e o tamanho das chamadas indiretas (contagens de blocos grandes demais).</p>
+    <h3>Por que os gathers são lentos (investigação de 28/11/2026, noite)</h3>
+    <ul>
+      <li><strong>Resolução interna: 1080p fixa.</strong> <code>dispatch 15x270x1</code> cobre 1920×1080, e o título cria uma janela de 1920×1080 mesmo com <code>GAMBIARRA_DISPLAY_MODE=854x480</code>. Por isso 480p não mudou nada.</li>
+      <li><strong>Resolução dinâmica não reage.</strong> Os quatro timestamps de GPU por quadro do título dizem "a placa não fez nada". Fingir carga com <code>GAMBIARRA_GPU_LOAD_MS=60</code> não mudou o custo (~1.250 ms de placa).</li>
+      <li><strong>VRAM estourada 2,3×.</strong> São 3.725 MB em uso para 1.590 MB de orçamento (alvos de render 1.243 MB, cópias de buffers do título ~4 GB, a maior parte na RAM do PC), com só 289 MB de RAM livre no PC. Baixar a textura para 200 MB tirou ~760 MB da placa, mas <em>não</em> acelerou os shaders lentos.</li>
+      <li><strong>Os shaders são pesados por natureza.</strong> <code>CS_CloudMultiScatteringCache</code> (32×32×2 grupos de 64 threads, 70 ms) tem três laços de ray marching aninhados com 12 amostras. <code>CS_Gather_Classified_10</code> (grupos de 8×4 = 32 threads) tem um laço externo com 31 amostras e 50 acessos a descritores. Na Polaris, cada grupo de 32 threads ocupa uma onda de 64 e desperdiça metade.</li>
+      <li><strong>Conta de ordem de grandeza.</strong> A RX 550 tem ~1,2 TFLOPS e 112 GB/s. Uma RTX 3060, que roda bem no caminho NVIDIA, tem ~13 TFLOPS e 360 GB/s. Os mesmos shaders traduzidos levariam ~10× mais tempo só pela potência, ~2× pelo desperdício de onda, e mais ainda pela memória fora da placa. Os ~1.000 ms medidos são coerentes com isso: não há um único defeito a corrigir.</li>
+    </ul>
+    <p><strong>Alavancas restantes, da maior para a menor:</strong></p>
+    <ol>
+      <li>Achar no executável onde o título escolhe a resolução interna (1080p) e forçar 720p ou 540p: corta o custo por pixel em 2,25× a 4× e libera ~700 MB de VRAM. Exige engenharia reversa com Ghidra.</li>
+      <li>No tradutor, juntar dois grupos de 32 threads numa onda de 64 quando o shader permitir: até 2× nos shaders afetados. <strong>Testado (rev. 2): piorou 2–3× nesta placa — ver seção 16.</strong></li>
+      <li>Trocar passes caros (nuvens, luzes com ray marching) por uma saída neutra, em vez de pular a chamada.</li>
+    </ol>
+    <div class="callout unknown"><strong>Material vazado não é usado.</strong> Circula a notícia de um vazamento do GDK interno do Xbox (cabeçalhos D3D12.X, compilador de shaders do console, documentação de memória, PIX). Esse material está sob NDA e não deve entrar neste projeto GPL: contaminaria o código e criaria risco legal. A própria análise publicada concorda com as nossas medições, porque não muda o que limita o desempenho: RAM e VRAM separadas no PC e a tradução de cada comando na CPU.</div>
+  </section>
+
+  <section id="testes">
+    <h2>7. Plano de testes (ideias a validar)</h2>
+    <p>Uma variável por vez, mesma sequência de teclas (<code>GAMBIARRA_KEYS</code>), mesma janela de medição, captura de quadros (<code>GAMBIARRA_CAPTURE</code>). Um teste só conta como ganho se melhorar o número da linha de medição <em>e</em> não piorar a imagem.</p>
+    <table>
+      <thead><tr><th>ID</th><th>Hipótese</th><th>Como testar</th><th>Critério de sucesso</th><th>Risco</th></tr></thead>
+      <tbody>
+        <tr><td>L1</td><td>Saída 720p reduz GPU e VRAM.</td><td><code>GAMBIARRA_DISPLAY_MODE=1280x720</code> sem o preset, ou após separar a variável.</td><td>Log mostra 1280×720 reportado; VRAM em uso &lt; 1,7 GB; ms/quadro menor.</td><td>Baixo</td></tr>
+        <tr><td>L2</td><td>Segunda execução não perde draws por compilação.</td><td>Rodar duas vezes seguidas.</td><td><code>being made</code> perto de 0 na segunda.</td><td>Nenhum</td></tr>
+        <tr><td>L3</td><td>Orçamento menor estabiliza a VRAM.</td><td><code>GAMBIARRA_TEXTURE_BUDGET_MB=900</code>.</td><td>Menos "card memory waited"; sem texturas faltando.</td><td>Texturas borradas</td></tr>
+        <tr><td>B1</td><td>A cena preta vem do <code>ambient</code>.</td><td><code>GAMBIARRA_AMBIENT=0</code>.</td><td>Imagem aparece.</td><td>Nenhum</td></tr>
+        <tr><td>B2</td><td>A cena preta vem da emulação.</td><td><code>GAMBIARRA_MESH_EMULATION=0</code>.</td><td>Imagem igual: emulação inocente.</td><td>Nenhum</td></tr>
+        <tr><td>B3</td><td>Achar o primeiro passe preto.</td><td>Capturar alvos intermediários por passe na abertura.</td><td>Passe identificado.</td><td>Trabalho de ferramenta</td></tr>
+        <tr><td>P1</td><td>Juntar <code>ExecuteIndirect</code> corta CPU.</td><td>Portar <code>indirect/merge.rs</code> da via NVIDIA.</td><td>Menos chamadas e ms em <code>recording per frame</code>.</td><td>Médio (porte)</td></tr>
+        <tr><td>P2</td><td>Pacote da thread de envio corta CPU.</td><td>Portar <code>LAND_ASIDE</code>, <code>PRELUDE_AHEAD</code>, <code>LIST_CLOSED_POOL</code>.</td><td>ms/quadro menor.</td><td>Médio</td></tr>
+        <tr><td>P3</td><td>Pular vídeos encurta o ciclo.</td><td>Portar <code>bink.rs</code> (<code>SKIP_BINK</code>).</td><td>Tela inicial mais cedo.</td><td>Baixo</td></tr>
+        <tr><td>E1</td><td>Baricêntricas emuladas recuperam ~400 draws.</td><td>Leitor entrega o canto como atributo; tradução do PS lê esse atributo.</td><td>Pipelines aceitos; <code>dropped</code> menor.</td><td>Médio</td></tr>
+        <tr><td>D1</td><td>Driver novo muda algum limite.</td><td>Atualizar o Adrenalin e repetir L2.</td><td>Mesmos números ou melhores.</td><td>Baixo</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="riscos">
+    <h2>8. Riscos e limites</h2>
+    <ul>
+      <li>Rasterização conservadora desligada e baricêntricas ausentes mudam o resultado de alguns passes; a imagem pode diferir do console mesmo depois de a cena aparecer.</li>
+      <li>O buffer da emulação é um anel sem cerca entre listas; uma volta completa dentro do mesmo quadro depende das barreiras para não sobrescrever dados ainda lidos.</li>
+      <li>Com 2 GB de VRAM, mesmo no perfil low o título pode exceder o orçamento em cenas grandes. Jogabilidade fluida não é uma expectativa realista nesta placa.</li>
+      <li>As mudanças desta revisão ainda não estão commitadas. Arquivos novos: <code>gpu/src/mesh.rs</code> e <code>shader/src/emit/mesh_reader.rs</code>.</li>
+    </ul>
+  </section>
+  <section id="quadro">
+    <h2>9. Onde vai o quadro: escada de cortes (28/11/2026)</h2>
+    <p>A pergunta era "o que deixa o fps baixo?". Em vez de adivinhar, cada corrida tirou mais uma coisa e mediu de novo. Mesma máquina, mesma sequência de teclas (<code>GAMBIARRA_KEYS</code>), mesma cena (créditos da abertura sobre a cena 3D), 300–360 s cada, textura 200–700 MB, BVH desligado.</p>
+    <table>
+      <thead><tr><th>Degrau</th><th>O que foi tirado</th><th>ms/quadro</th><th>GPU ocupada (ms)</th><th>Comandos do jogo na GPU (ms)</th><th>CPU preparando (ms)</th><th>Memória compartilhada</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>Nada (1080p interno)</td><td>2.196</td><td>1.652</td><td>~1.000–1.100</td><td>—</td><td>~9–11 GB</td></tr>
+        <tr><td>1</td><td>Resolução interna 720p (<code>GAMBIARRA_RENDER_SIZE=1280x720</code>)</td><td>1.544</td><td>802</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td>2</td><td>640×360, textura 200 MB, <code>TEXTURE_MAX=64</code> (que não pegou: ver 10)</td><td>630–2.075 (típico ~830)</td><td>330–570 (picos 1.305)</td><td><strong>~300</strong>, espalhados em 847 tipos</td><td>140–320</td><td>7,4–8,7 GB</td></tr>
+        <tr><td>3</td><td>Degrau 2 + <strong>todos os compute shaders</strong> (<code>GAMBIARRA_SKIP_PASSES=CS_</code>)</td><td>585–1.124</td><td>154–349</td><td>—</td><td>137–200</td><td>8,3–8,7 GB</td></tr>
+        <tr id="degrau4"><td>4</td><td>Degrau 2 + <strong>todos os shaders</strong> (<code>CS_,MS_,VS_,PS_</code>): o jogo não desenha nada</td><td><strong>266–487</strong> (2,1–3,8 fps)</td><td><strong>158–345</strong>, com 11–136 draws</td><td>~0</td><td>54–82</td><td>6,7–7,0 GB</td></tr>
+      </tbody>
+    </table>
+    <div class="callout unknown"><strong>O piso da camada.</strong> Sem nenhum shader do jogo, o quadro ainda leva 266–487 ms, e a placa continua ocupada 158–345 ms por quadro sem desenhar quase nada. Esse é o custo da nossa camada sozinha: cópias, comparações na placa ("heap buffers passes" 30–63 ms), aliasing e esperas, mais ~6,8 GB de memória compartilhada que não some. Com tudo ligado em 360p o quadro típico é ~830 ms, ou seja: <strong>cerca de metade do quadro é a camada, mesmo antes de o jogo desenhar</strong>. Mesmo que os shaders do jogo custassem zero, o teto desta máquina hoje seria ~3 fps.</div>
+    <div class="callout good"><strong>Conclusão da escada.</strong> Baixar de 1080p para 720p corta metade da GPU, mas daí para baixo quase nada muda: de 720p para 360p os pixels caem a ¼ e o quadro não cai nem pela metade. Tirar <em>todos</em> os compute shaders do jogo (iluminação, nuvens, céu, física, partículas) deixa o quadro em 585–1.124 ms, praticamente o mesmo de antes. <strong>O fps baixo não é culpa de um efeito pesado do jogo.</strong> O que sobra é a nossa camada (cópias, comparações, sincronização) e a memória fora do lugar.</div>
+    <h3>Os comandos mais caros no degrau 2 (por quadro)</h3>
+    <table>
+      <thead><tr><th>Comando</th><th>ms</th><th>O que é</th></tr></thead>
+      <tbody>
+        <tr><td>cópias de aliasing (<code>alias copy</code>)</td><td>27</td><td>Da nossa camada: recursos que dividem a mesma memória no console</td></tr>
+        <tr><td><code>CS_GatherRaymarchedLocalLightsClassified16</code> + <code>15</code></td><td>26 + 7</td><td>Luzes locais com ray marching</td></tr>
+        <tr><td><code>MS_VS_Depth</code> (mesh emulado)</td><td>19</td><td>Passada de profundidade</td></tr>
+        <tr><td><code>CS_WavePerSplineConstraint_32</code>, <code>CS_SolvePerVertConstraint</code></td><td>13 + 8</td><td>Física de cordas/tecido</td></tr>
+        <tr><td><code>CS_UpdateParticles</code></td><td>12</td><td>Partículas</td></tr>
+        <tr><td><code>CS_ScreenProbes_TemporalResolve_ReflectiveCaustics</code></td><td>10</td><td>Reflexos</td></tr>
+        <tr><td><code>CS_SkyRadianceCache</code> + <code>_Camera_Gather</code></td><td>9 + 7</td><td>Céu</td></tr>
+      </tbody>
+    </table>
+    <p>Por família: dispatch 107 ms, indiretos 88 ms, mesh emulado 67 ms, aliasing 27 ms, draws 7 ms. Nenhum item passa de 10% do quadro. O resumo por comando só sai com <code>GAMBIARRA_GPU_TIMING=1</code> <strong>e</strong> <code>GAMBIARRA_D3D12_DRED=1</code> juntos.</p>
+  </section>
+
+  <section id="memoria">
+    <h2>10. Onde está a memória</h2>
+    <p>Contabilidade do próprio launcher (linhas <code>copystat: memory*</code> do log), degrau 2 da escada, 640×360:</p>
+    <div class="grid">
+      <div class="card"><div class="muted">VRAM em uso / orçamento</div><div class="num">2.754 / 1.564 MB</div><div class="muted">176% do orçamento</div></div>
+      <div class="card"><div class="muted">RAM do PC usada pela placa</div><div class="num">7,4 GB</div><div class="muted">lida pelo PCIe</div></div>
+      <div class="card"><div class="muted">RAM privada do processo</div><div class="num">15,9 GB</div><div class="muted">PC com 456 MB livres</div></div>
+      <div class="card"><div class="muted">Shaders guardados</div><div class="num">268 MB</div><div class="muted">não é aqui o problema</div></div>
+    </div>
+    <h3>Dentro da placa</h3>
+    <table>
+      <thead><tr><th>Categoria</th><th>MB</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>Alvos de renderização e texturas que a GPU escreve</td><td>1.018</td><td>788 recursos. Em 360p ainda ocupam 1 GB: a maioria tem tamanho fixo (sombras, sondas, caches, volumes) e não acompanha a resolução.</td></tr>
+        <tr><td>Cópias de buffers do jogo na placa</td><td>774 feitas, 278 vivas</td><td>Só 7 cópias ficam dentro da placa. O resto dos buffers mora na RAM.</td></tr>
+        <tr><td>Blocos do pool de texturas</td><td>448 (+128 de staging)</td><td><code>GAMBIARRA_TEXTURE_POOL=0</code> desliga.</td></tr>
+        <tr><td>Texturas que o jogo carrega</td><td>245</td><td>905 texturas. 3.466 ainda sem cópia (3,6 GB de memória do jogo). Cortar textura rende pouco.</td></tr>
+      </tbody>
+    </table>
+    <h3>Fora da placa</h3>
+    <table>
+      <thead><tr><th>Categoria</th><th>Tamanho</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>"Janelas" da memória do jogo</td><td>2.476 MB (605 janelas) sobre 2.376 MB de memória do jogo</td><td>Espelho dos buffers do console, em heaps de upload (memória write-combined) que a GPU lê pelo barramento. Só 1.450 MB ficam entre o primeiro e o último endereço pedido em cada janela: <strong>~1 GB parece sobra</strong> da grade de 4 MiB.</td></tr>
+        <tr><td>Blocos de upload write-combined</td><td>~6 GB</td><td>132 × 32 MB (4,2 GB), 11 × 64 MB, 3 × 128 MB, 1 × 256 MB… É o grosso dos "7,4 GB compartilhados".</td></tr>
+        <tr><td>Listas de comando</td><td>671 vivas, 103 MB de scratch</td><td>241 nunca foram resetadas desde que nasceram.</td></tr>
+        <tr><td>Alocações pequenas da camada</td><td>1.340 MB em 1,26 milhão de blocos</td><td>217 MB em blocos &lt; 4 KiB.</td></tr>
+        <tr><td>Shaders do jogo e traduções</td><td>189 + 79 MB</td><td>19.098 containers, 2.431 traduções.</td></tr>
+        <tr><td>Biblioteca de pipelines em disco</td><td><strong>0 MB</strong></td><td>O último salvamento gravou 0 MB: os pipelines são recompilados a cada execução.</td></tr>
+      </tbody>
+    </table>
+    <h3>O que a CPU faz a cada quadro por causa da memória separada</h3>
+    <ul>
+      <li>~159 ms entre o present e a primeira chamada de lista (o código do jogo rodando).</li>
+      <li>78 ms procurando o que os shaders escreveram, mais 33 ms devolvendo isso à memória do jogo (<code>EXACT_BACK</code>).</li>
+      <li>61–173 ms de cópias da memória do jogo para a placa (45–156 MB por quadro).</li>
+      <li>Consultas de <em>write-watch</em> ao kernel para saber o que a CPU mudou.</li>
+    </ul>
+    <div class="callout caution"><strong>Por que o <code>TEXTURE_MAX</code> não pegou.</strong> O corte trazido do Belobug só age em texturas 2D com mips que o próprio jogo posiciona na memória (<code>held_only</code> em <code>resource.rs</code>). Nenhuma passou por esse caminho nesta cena, então o log nunca registrou nada. Também por isso "tirar as texturas" quase não mudaria o quadro: elas são só 245 MB.</div>
+    <div class="callout unknown"><strong>Divergência com a seção 2.</strong> A linha 4 diz que o FSR real do pacote resolveu a divisão por zero. Hoje o log mostra <code>refused dll="amd_fidelityfx_upscaler_xbox.dll"</code> (fora da política de DLLs do host), e a divisão volta assim que a resolução interna fica abaixo da saída. Por isso o <code>GAMBIARRA_RENDER_SIZE</code> remenda a divisão com <code>quadro &amp; 7</code> (8 fases). Falta decidir se a DLL deve voltar a ser aceita.</div>
+  </section>
+
+  <section id="ideias">
+    <h2>11. Ideias da conversa (Discord): o que procede e o que não</h2>
+    <p>A conversa tinha ideias boas misturadas com contradições. Cada uma abaixo tem o veredito, a evidência medida e o que fazer com ela.</p>
+
+    <h3>11.1 "O Xbox é praticamente um vídeo integrado: CPU e GPU na mesma memória, a troca é quase instantânea"</h3>
+    <p><span class="ok">Procede.</span> O Series S é uma APU com 10 GB de GDDR6 únicos (8 GB rápidos, 2 GB lentos); o Series X tem 16 GB. CPU e GPU leem e escrevem os mesmos endereços, sem cópia e sem barramento no meio. O número "0,01 µs" é exagero, mas a direção está certa: no console não existe "mandar para a placa".</p>
+    <p><strong>No PC</strong> isso vira o custo que medimos: a camada precisa descobrir o que a CPU mudou (write-watch), copiar para a placa (61–173 ms), descobrir o que a GPU escreveu (78 ms) e devolver (33 ms). Esse vai-e-volta não existe no console. <strong>É a causa principal do fps baixo</strong> (seção 9).</p>
+
+    <h3>11.2 "Mandar compilar o shader na GPU e devolver para a CPU"</h3>
+    <p><span class="bad">Contradição.</span> A compilação (DXIL → código de máquina da placa) é feita pelo driver, <em>na CPU</em>. A GPU não compila os próprios shaders: ela só executa código pronto. Também não é a compilação que deixa o jogo lento <em>durante</em> o quadro.</p>
+    <p><strong>O que procede da ideia:</strong> tirar a compilação de dentro do jogo. Isso é traduzir e compilar antes (<code>gambiarra-cli warm</code> / precompile), em paralelo, e guardar o resultado em disco para a próxima vez. Hoje a biblioteca de pipelines salva 0 MB, então isso nem está acontecendo.</p>
+
+    <h3>11.3 "Pré-carregar os shaders mais usados na VRAM ou na memória"</h3>
+    <p><span class="open">Parcial.</span> O código dos shaders é pequeno: 189 MB de containers do jogo e 79 MB de traduções, e quem decide onde o código compilado fica na placa é o driver. Mover shaders não muda a memória de forma relevante.</p>
+    <p><strong>Onde a pré-carga ajuda:</strong> 290 a 700 draws por quadro são descartados porque o pipeline ainda não existe ("dropped without a host pipeline"). Pré-compilar tudo elimina esses buracos na imagem e as travadas de compilação. Ajuda a imagem e o carregamento, não o fps.</p>
+
+    <h3>11.4 "No loading o shader não tem o endereço certo: vai tanto para a placa quanto para a RAM"</h3>
+    <p><span class="ok">Procede, trocando "shader" por "dados".</span> Quem está no lugar errado não é o código dos shaders, e sim os <em>dados</em> que eles leem. O jogo aloca a memória pensando numa memória só. A camada espelha essa memória em "janelas" de upload heap na RAM (2,4 GB) e a GPU as lê pelo PCIe. A RX 550 usa só 8 linhas PCIe 3.0, cerca de 8 GB/s contra 112 GB/s da própria VRAM. Só 278 MB de buffers estão de fato na placa.</p>
+    <p><strong>Esta é a versão acionável de toda a conversa:</strong> decidir, para cada região de memória do jogo, onde ela deve morar no PC.</p>
+
+    <h3>11.5 "O que é 3D vai para a GPU; o que é mecânica fica na CPU"</h3>
+    <p><span class="ok">Procede, como regra de posicionamento.</span> É assim que um jogo de PC aloca: o que só a placa usa fica na VRAM (heap <em>default</em>), o que a CPU escreve todo quadro fica em <em>upload</em>, e o que a GPU produz para a CPU ler fica em <em>readback</em>. O console não diz a intenção, porque lá tudo é a mesma memória. Mas a camada <strong>já observa</strong> quem escreve cada região: o write-watch registra as escritas da CPU, e as escritas de shader são detectadas. Dá para classificar:</p>
+    <table>
+      <thead><tr><th>Quem escreve</th><th>Quem lê</th><th>Onde deveria morar no PC</th><th>Exemplos</th></tr></thead>
+      <tbody>
+        <tr><td>Só a GPU</td><td>Só a GPU</td><td>VRAM (default), sem cópia nenhuma</td><td>Alvos de renderização, buffers de culling, contadores</td></tr>
+        <tr><td>CPU uma vez (carga)</td><td>GPU</td><td>VRAM, copiada uma vez</td><td>Geometria estática, texturas</td></tr>
+        <tr><td>CPU todo quadro</td><td>GPU</td><td>Upload (RAM), lida pelo barramento</td><td>Constantes da câmera, objetos dinâmicos</td></tr>
+        <tr><td>GPU</td><td>CPU</td><td>Readback, copiada de volta</td><td>Oclusão, exposição automática, picking</td></tr>
+      </tbody>
+    </table>
+    <p>Hoje a maior parte cai em "upload" por padrão, porque esse é o caminho seguro para uma memória que <em>poderia</em> ser escrita pela CPU a qualquer momento.</p>
+
+    <h3>11.6 "No GTA V de PC os shaders vão direto para o aplicativo da Rockstar"</h3>
+    <p><span class="open">Não verificável aqui.</span> Não temos como confirmar o que o launcher da Rockstar faz. O que se sabe de jogos de PC em geral: os pipelines compilados para uma placa e um driver ficam num cache em disco (do jogo ou do driver) e são reaproveitados nas próximas execuções. O nosso equivalente existe, a biblioteca de pipelines e o <code>warm</code>, e hoje salva 0 MB.</p>
+
+    <h3>11.7 "DayZ e Arma carregam o jogador direto no mapa, sem pré-carga de shaders"</h3>
+    <p><span class="ok">Procede.</span> Esses jogos compilam sob demanda, por isso o carregamento é curto e as travadas aparecem durante o jogo. O título pré-carrega no console porque lá os shaders já vêm compilados para aquela GPU exata. No PC, cada shader precisa ser traduzido (RDNA2 → DXIL) e compilado pelo driver, e por isso o carregamento fica longo. Resolve-se fazendo isso uma vez e guardando.</p>
+
+    <h3>11.8 "O FiveM processa mais na CPU"</h3>
+    <p><span class="muted">Fora do escopo.</span> Não muda o diagnóstico desta placa. Fica registrado sem veredito.</p>
+
+    <h3>11.9 PDF "VIctory AI Adaptive Engine"</h3>
+    <p><span class="open">Parcial.</span> É uma proposta conceitual, e o próprio documento diz que não é código validado. Aproveitável: começar por regras simples, medir p95/p99 de frametime na mesma cena e reverter ajustes que pioram. Um modelo de IA para escolher ajustes não ataca o gargalo medido (11.1, 11.4). O problema é de arquitetura de memória, não de escolha de parâmetros.</p>
+
+    <div class="callout caution"><strong>Contradições resolvidas.</strong> (1) "Compilar na GPU" e "pré-carregar shaders na VRAM" partem da ideia de que o problema é o shader. A medição mostra que é o <em>dado</em>: tirar todos os compute shaders não acelera. (2) "Tirar as texturas para ver o problema": as texturas do jogo ocupam só 245 MB, e o peso está nos alvos de renderização (1 GB) e nos buffers espelhados (2,4 GB). (3) "Shader vai para a placa e para a RAM": vale para os buffers, não para o código.</div>
+  </section>
+
+  <section id="ataque">
+    <h2>12. Plano de ataque</h2>
+    <p>Ordem pelo tamanho do ganho medido. Cada item tem interruptor (desligado por padrão), métrica e critério. Uma mudança por vez, com a mesma escada da seção 9.</p>
+    <table>
+      <thead><tr><th>#</th><th>Ataque</th><th>Onde no código</th><th>Métrica</th><th>Critério de sucesso</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><strong>Classificar a memória do jogo por quem escreve e quem lê</strong> (tabela 11.5). Primeiro só medir e registrar no log quantos MB cairiam em cada classe. Depois mover o que é "só GPU" e "CPU uma vez" para a VRAM.</td><td><code>gpu/src/shadow.rs</code> (cópias na placa, orçamento <code>GAMBIARRA_CARD_BUFFERS_MB</code>), write-watch e <code>EXACT_BACK</code> em <code>host.rs</code></td><td>Memória compartilhada; "on the GPU"; cópias por quadro</td><td>Compartilhada &lt; 3 GB; GPU ocupada cai sem perder imagem</td></tr>
+        <tr><td>2</td><td><strong>Abrir espaço na VRAM</strong>: (a) grade das janelas menor que 4 MiB para recuperar parte do ~1 GB; (b) listar os alvos de tamanho fixo que somam 1 GB em 360p e reduzir os que o jogo permite; (c) estender o <code>TEXTURE_MAX</code> além das texturas <code>placed</code>.</td><td><code>copystat.rs</code> (linha "memory, windows"), <code>resource.rs</code> (<code>capped_first</code>, <code>held_only</code>)</td><td>VRAM em uso / orçamento</td><td>Abaixo de 100% do orçamento</td></tr>
+        <tr><td>3</td><td><strong>Menos vai-e-volta CPU↔GPU</strong>: só procurar escritas de shader em regiões que a CPU de fato lê; juntar cópias pequenas.</td><td><code>EXACT_BACK</code>, <code>land.rs</code>, cópias em <code>host.rs</code></td><td>"finding pieces" + "putting back" + cópias</td><td>&lt; 50 ms somados por quadro</td></tr>
+        <tr><td>4</td><td><strong>Cache de pipelines que persiste</strong>: descobrir por que a biblioteca grava 0 MB e rodar o <code>warm</code> antes do jogo.</td><td><code>pipeline/library.rs</code>, <code>gambiarra-cli warm</code></td><td>Draws "without a host pipeline"; tempo até o menu</td><td>Segunda execução com ~0 draws descartados por falta de pipeline</td></tr>
+        <tr><td>5</td><td><strong>Só depois, shaders</strong>: wave32→wave64 (<code>GAMBIARRA_MERGE_WAVE32</code>), passes neutros (<code>GAMBIARRA_NEUTRAL_PASSES</code>) nos gathers.</td><td><code>shader/src/emit</code>, <code>gpu/src/neutral.rs</code></td><td>ms dos comandos do jogo</td><td>Ganho que apareça no ms/quadro total, não só no comando</td></tr>
+        <tr><td>6</td><td><strong>RAM do PC</strong>: o processo chega a 15,9 GB e o PC fica sem memória livre. Rodar 10 minutos para separar platô de vazamento; revisar listas nunca resetadas (241) e o 1,26 milhão de alocações pequenas.</td><td><code>list.rs</code>, alocador da camada</td><td>RAM privada ao longo do tempo</td><td>Platô estável, &lt; 10 GB</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><strong>Ferramentas que já existem para isso.</strong> <code>GAMBIARRA_RENDER_SIZE</code> (resolução interna), <code>GAMBIARRA_SKIP_PASSES</code> (escada de cortes), <code>GAMBIARRA_NEUTRAL_PASSES</code> (saída neutra sem travar a placa), <code>GAMBIARRA_GPU_TIMING=1</code> + <code>GAMBIARRA_D3D12_DRED=1</code> (tempo por comando), as linhas <code>copystat: memory*</code> (contabilidade de memória) e <code>GAMBIARRA_PRESENT_TARGET</code> (ver um alvo intermediário na janela).</div>
+  </section>
+
+  <section id="herdado">
+    <h2>13. Temas trazidos de "Estudos técnicos"</h2>
+    <p>Este estudo passa a ser o único documento técnico que continua. O antigo <code>estudos-tecnicos-gambiarra.html</code> (revisões 2 e 3, Codex e Claude) foi movido para <code>reports/hardware/archive/</code>. O que ele tinha de útil e que não estava aqui vem abaixo, corrigido com o que se sabe hoje. Onde ele dizia que a RX 550 "não alcançou o mundo" ou "só tem Shader Model 6.5", isso valia antes do Agility SDK 618 e da emulação de mesh (seções 1 e 3).</p>
+
+    <h3>13.1 Iluminação sem ray tracing: o que o <code>ambient</code> faz e o que não faz</h3>
+    <ul>
+      <li><strong>Por que existe:</strong> o ray tracing do título não é uma chamada DXR que dê para desligar por parâmetro. O jogo percorre as próprias estruturas BVH com compute shaders e endereços de memória do console. Na RX 550 o construtor de BVH fica desligado (<code>GAMBIARRA_BVH_BUILDER=0</code>), então os passes que dependem dele não têm dado.</li>
+      <li><strong>O que <code>GAMBIARRA_AMBIENT=1</code> faz</strong> (<code>gpu/src/ambient.rs</code>): reconhece pelo nome do programa os passes de coleta de radiância, de resolução de sondas e de acumulação de luz no volume de ar. Estima uma luz indireta direcional a partir da radiância na tela, agrega em células e suaviza no tempo. No passe <em>raise</em>, reconstrói posição e normal a partir da profundidade e amostra 12 pontos em espiral para escurecer cantos e contatos. Essa última parte é parecida com SSAO.</li>
+      <li><strong>O que não faz:</strong> sombras de sol e de lâmpadas, oclusão do que está fora da tela e reflexos. Uma técnica de tela não enxerga geometria que não está no depth buffer. Pode haver halos e bordas erradas.</li>
+      <li><strong>Controles:</strong> <code>GAMBIARRA_AMBIENT_SHADE</code> (força e raio do escurecimento), <code>GAMBIARRA_AMBIENT_TINT=r,g,b</code> e <code>GAMBIARRA_AMBIENT_FILE</code> (cor e ajuste ao vivo, trazidos do Belobug hoje). O fallback não roda enquanto o construtor de BVH está ativo.</li>
+      <li><strong>Estado:</strong> os testes <code>ambient::tests</code> passam, mas o efeito ainda não foi validado numa imagem do mundo nesta placa. Na revisão 1, o teste B1 (seção 7) já suspeitava dele na cena preta.</li>
+    </ul>
+
+    <h3>13.2 CPU: o código do jogo roda nativo, não há interpretador</h3>
+    <p>Isso conversa direto com a ideia "o que é mecânica fica na CPU" (11.5): a parte da CPU já está no lugar certo.</p>
+    <pre>Executável x86-64 do título
+  ├─ instruções comuns ───────────────► CPU do PC (execução nativa, sem tradução)
+  ├─ instruções do Zen 2 ausentes ────► handler de exceção + emulação pontual
+  └─ imports Xbox/GDK/D3D12.X ────────► gambiarra-hle ─► APIs do Windows / D3D12
+                                                     └─► gambiarra-gpu + tradutor de shaders</pre>
+    <ul>
+      <li><strong>Carregador</strong> (<code>gambiarra-loader</code>): mapeia o executável e as DLLs, TLS e threads, resolve imports. Ordem: HLE, host permitido, DLL do título e, por fim, stub que nomeia a função ausente.</li>
+      <li><strong>Emulação pontual</strong> (<code>console_insn.rs</code>): <code>CLWB</code> sem efeito; <code>CLZERO</code> zera blocos, e o laço reconhecido vira stores comuns depois da primeira exceção; <code>MONITORX/MWAITX</code> viram espera curta; <code>RDPRU</code> devolve um contador do <code>QueryPerformanceCounter</code>, uma aproximação que pode afetar timeouts; <code>RDPID</code>, <code>EXTRQ</code> e <code>INSERTQ</code> são tratadas no contexto da exceção.</li>
+      <li><strong>Consequência para o fps:</strong> o custo de CPU medido na seção 10 não vem de emular instruções. Vem da camada gráfica: gravar comandos, write-watch, cópias e procurar o que os shaders escreveram. O ~159 ms entre o present e a primeira chamada de lista é o próprio jogo rodando nativo.</li>
+      <li><strong>Testes:</strong> <code>cargo test -p gambiarra-loader</code> passou (42 testes: decodificação, SSE4a, waits, CLZERO, exceções, TLS, threads, imports).</li>
+    </ul>
+
+    <h3>13.3 Exportar o mapa para a Unreal Engine: ainda não dá</h3>
+    <ul>
+      <li>Não existe extrator de mundo nem exportador para FBX ou glTF no projeto. Executar e traduzir o runtime não equivale a decodificar o cenário.</li>
+      <li>A inspeção estática do executável (PE x64, 120 MB, 587 funções importadas de 68 DLLs) mostra dependências gráficas (<code>xmem.dll</code>, <code>d3d12_xs.dll</code>, <code>XboxBvhBuilder.dll</code>). Ela não mostra que o mapa esteja no executável.</li>
+      <li><code>gambiarra-formats</code> lê texturas, BCPack e XMA, mas não malhas nem cenários. Mesh shaders são programas que desenham, não os dados de vértices, e uma captura de quadro não reconstrói o que está fora da tela, a colisão ou o streaming.</li>
+      <li>Para uma conversão permitida faltariam cinco etapas: localizar o pacote do mundo, decodificar a cena, converter texturas e materiais, exportar e montar o nível na Unreal. A política de assets (<code>docs/asset-policy.md</code>) proíbe guardar no repositório qualquer dado derivado do jogo.</li>
+    </ul>
+  </section>
+
+  <section id="kit">
+    <h2>14. O "kit de desenvolvimento" da conversa e como usar a ideia</h2>
+    <p>A conversa sugere usar o kit de desenvolvimento do Xbox (GDK) para saber "onde a memória tem que alocar cada coisa e como traduzir isso para o PC". A ideia está certa no objetivo. O caminho precisa ser outro.</p>
+
+    <h3>14.1 O que pode e o que não pode entrar</h3>
+    <table>
+      <thead><tr><th>Fonte</th><th>Pode usar?</th><th>Por quê</th></tr></thead>
+      <tbody>
+        <tr><td>GDK interno vazado (cabeçalhos D3D12.X, compilador de shaders do console, documentação de memória, PIX do console)</td><td class="bad">Não</td><td>Está sob NDA. Contaminaria o código GPL e criaria risco legal para todo o projeto (callout da seção 6b).</td></tr>
+        <tr><td>GDK público e documentação pública da Microsoft (APIs <code>XMem</code>, GDK para PC, D3D12 do PC)</td><td class="ok">Sim</td><td>Público. Serve para entender as APIs que o título chama, não o hardware interno.</td></tr>
+        <tr><td><strong>O que o próprio título pede em tempo de execução</strong></td><td class="ok">Sim</td><td>É observação do nosso runtime. Nenhum material de terceiros entra no código.</td></tr>
+      </tbody>
+    </table>
+    <p>Mesmo com o kit, ele não "resolveria o port". Ele explica como o console funciona, mas a tradução para memória separada continua sendo trabalho nosso, que é exatamente o que as seções 9 a 12 medem.</p>
+
+    <h3>14.2 O jogo já diz onde cada memória deveria ficar</h3>
+    <p>Cada vez que o título pede memória (<code>XMemAlloc</code> / <code>VirtualAlloc</code>), ele passa bits de proteção que dizem como CPU e GPU vão acessá-la. O <code>gambiarra-hle</code> (<code>modules/xmem.rs</code>, <code>note_protection</code>) já registra isso no log: 0x200 = CPU sem cache, 0x400 = CPU em write-combined, 0x800 e acima = bits da GPU. O próprio código anota a regra: <em>memória que a CPU acessa sem cache ou em write-combined é memória que a CPU não lê</em>.</p>
+    <table>
+      <thead><tr><th>Proteção pedida</th><th>Leitura provável</th><th>Volume no log (degrau 2)</th><th>Onde deveria morar no PC</th></tr></thead>
+      <tbody>
+        <tr><td><code>0x2404</code> (escrita + write-combined + GPU)</td><td>A CPU escreve, a GPU lê, <strong>a CPU nunca lê de volta</strong></td><td>~2,5 GB (1.281 + 1.277 MB)</td><td>Na VRAM, recebendo só o que a CPU escreve. <strong>Nunca procurar nem copiar de volta</strong> o que a GPU escreve aí.</td></tr>
+        <tr><td><code>0x2004</code> (escrita + cache da CPU + GPU)</td><td>Compartilhada de verdade: os dois leem e escrevem</td><td>~4,0 GB</td><td>Upload/compartilhada. É a única classe que precisa do vai-e-volta.</td></tr>
+        <tr><td><code>0x22004</code></td><td>Bit da GPU a mais (significado exato não confirmado)</td><td>~1,4 GB</td><td>Medir: quem escreve, quem lê.</td></tr>
+        <tr><td><code>0x4</code> (só CPU, com cache)</td><td>Memória de CPU: lógica e mecânica</td><td>muitas alocações</td><td>RAM do PC, sem espelho na GPU.</td></tr>
+        <tr><td><code>0x801</code></td><td>Reserva grande de endereços</td><td>16 GB reservados</td><td>Só endereço, não ocupa memória.</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Os MB são o acumulado que o log mostrou na última linha de cada tipo, não a memória viva no momento. O significado dos bits acima de 0x800 vem do comentário do código e de leitura do uso, não de documentação: por isso a primeira etapa é medir, não mover.</p>
+    <div class="callout good"><strong>Fase 1 — medido e verificado (28/11/2026).</strong> Foi criada a instrumentação <code>memclass</code>: o HLE (<code>xmem.rs</code>) registra a proteção de cada região que o título aloca, e a contabilidade passa a imprimir a linha <code>memory by class</code>. Duas corridas de 640×360 (a segunda com a classificação corrigida) dão o mesmo resultado, e a conclusão é mais forte do que a tabela 14.2 previa:
+      <table>
+        <thead><tr><th>Lado da alocação (<code>XMemVirtualAlloc</code>) — <strong>confirmado</strong></th><th>MB</th><th>Classe</th></tr></thead>
+        <tbody>
+          <tr><td><code>0x22004</code></td><td>1.614</td><td>GPU + cacheável (bit <code>0x20000</code> extra)</td></tr>
+          <tr><td><code>0x2404</code></td><td><strong>1.277</strong></td><td><strong>write-combined</strong> — CPU escreve, nunca lê de volta</td></tr>
+          <tr><td><code>0x1</code> + <code>0x4</code></td><td>218</td><td>só-CPU</td></tr>
+        </tbody>
+      </table>
+      <strong>Mas as janelas espelhadas não vêm daí.</strong> Classificadas pelo endereço real (a chave do mapa de janelas), ~1.555 MB das janelas e os 353 MB de cópias na placa caem em <em>unknown</em>: o endereço delas não está em nenhuma região de <code>XMemVirtualAlloc</code>. O motivo: a memória que as janelas espelham é <strong>mapeada por seção</strong> (<code>CreateFileMappingW</code> + <code>MapViewOfFile3</code>, <code>xmem.rs</code> ~670), um <code>PAGE_READWRITE</code> comum sem os bits de console. Ou seja, o 1,28 GB write-combined e a memória que custa cópia/barramento são <strong>dois conjuntos diferentes</strong>.
+      <br><br><strong>Consequência para o plano:</strong> para as janelas, a proteção de alocação não serve como sinal; o sinal certo é o que a camada <em>já observa</em>. Instrumentação em <code>crates/gambiarra-gpu/src/memclass.rs</code> (só-diagnóstico, nada commitado).</div>
+    <div class="callout good"><strong>Fase 1b — o resultado que direciona o ataque (28/11/2026, verificado).</strong> Dividindo as janelas pelo sinal que a camada tem (a GPU escreve a janela, ou só lê), em 640×360:
+      <table>
+        <thead><tr><th>Janelas espelhadas (~1,9 GB)</th><th>MB</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Entrada só-leitura</strong> — a GPU lê, <strong>nunca escreve</strong> (geometria, constantes, texturas transmitidas)</td><td><strong>1.910–1.918</strong></td></tr>
+          <tr><td>A GPU escreve (precisaria de cópia de volta)</td><td><strong>0</strong></td></tr>
+        </tbody>
+      </table>
+      <strong>Praticamente toda a memória espelhada é entrada só-leitura da GPU.</strong> A cópia de volta que o log mostra (43 ms procurando 294 pedaços que diferem + 19 ms devolvendo) <em>não</em> roda sobre essas janelas — roda sobre as cópias de buffer na placa, que são um conjunto à parte e menor (~12 MB/quadro, 353 MB vivos).
+      <br><br><strong>O que isso decide:</strong>
+      <ul>
+        <li><strong>Fase 3 é o grande ganho e é segura:</strong> ~1,9 GB de janelas só-leitura podem viver <em>na placa</em>, alimentadas só pelas escritas da CPU (write-watch). Como a GPU nunca as escreve, não há risco de dessincronia e nunca precisam de cópia de volta. É o alvo direto dos ~6,8 GB de memória compartilhada e das cópias de 61–173 ms/quadro.</li>
+        <li><strong>Fase 2 (pular a cópia de volta)</strong> mira o conjunto pequeno de cópias escritas pela GPU, não essas janelas. Ganho menor do que se pensava.</li>
+      </ul>
+      Ordem revisada: a <strong>Fase 3 sobe para primeira</strong>. Mover as janelas só-leitura para a placa ataca memória, barramento e tempo de cópia de uma vez, com o menor risco.</div>
+    <div class="callout unknown"><strong>Fase 3 — testada, bloqueada pelo hardware (28/11/2026).</strong> A máquina para isso <em>já existe</em>: <code>GAMBIARRA_WINDOWS_BAR_MB</code> coloca as janelas na memória da placa num heap <code>D3D12_HEAP_TYPE_GPU_UPLOAD</code> (mapeado para a CPU escrever direto, sem lado na RAM e sem cópia de volta — a base de correção é exatamente o "nenhum shader escreve uma janela" da Fase 1b). Mas rodar com <code>GAMBIARRA_WINDOWS_BAR_MB=1800</code> <strong>não baixou a memória compartilhada</strong> (8,5 GB), e o log diz por quê: <code>card memory the CPU maps supported=false</code>. A <strong>RX 550 não tem Resizable BAR</strong>, então o heap GPU-upload não existe nesta placa. O outro caminho (<code>GAMBIARRA_CARD_WINDOWS_MB</code>, janela em heap default com o lado da CPU ainda na RAM) depende de caber na VRAM, que já está a 176% do orçamento. <strong>Conclusão:</strong> nesta placa de 2 GB a Fase 3 está bloqueada duas vezes — sem ReBAR e sem espaço. Ela é o ataque certo, mas só rende numa placa com ReBAR ou com VRAM suficiente (RDNA2/RTX). É mais uma evidência de que a RX 550 é pequena demais por limites de capacidade, não de software: a camada ficaria barata numa placa normal.</div>
+    <div class="callout good"><strong>Esta é a versão segura do "kit".</strong> Quem escreveu o jogo já marcou cada bloco de memória com a intenção dele. A regra da tabela 11.5 ("o que é 3D vai para a GPU, o que é mecânica fica na CPU") pode ser aplicada <em>pelos bits que o próprio título passa</em>, sem adivinhar e sem material vazado.</div>
+
+    <h3>14.3 Como entra no plano de ataque</h3>
+    <ol>
+      <li><strong>Medir (ataque 1, sem mudar comportamento):</strong> marcar cada janela, cópia e cópia de volta com o tipo de memória da alocação que a contém. Responde à pergunta "dos 2,4 GB de janelas, dos 61–173 ms de cópias e dos 111 ms de cópia de volta, quanto é de cada tipo?".</li>
+      <li><strong>Cortar o vai-e-volta onde a CPU não lê (ataque 3):</strong> em memória write-combined, a CPU não lê o que a GPU escreveu. Então "procurar o que os shaders escreveram" e "devolver à memória do jogo" podem ser pulados nessas regiões. Interruptor novo, desligado por padrão, e comparar imagem e ms/quadro.</li>
+      <li><strong>Mover para a VRAM (ataque 1):</strong> regiões write-combined lidas pela GPU passam a ter a cópia principal dentro da placa. Só o que a CPU escreve sobe (write-watch). A meta é derrubar os ~6,8 GB compartilhados que sobram até no degrau sem shaders.</li>
+      <li><strong>Usar o GDK público</strong> para confirmar o contrato das APIs <code>XMem</code> (atributos de <code>XMemAlloc</code>) e corrigir a tabela 14.2 onde ela for leitura provável.</li>
+    </ol>
+
+    <h3>14.4 "O processador do Xbox não é o mesmo de um PC"</h3>
+    <ul>
+      <li><span class="ok">Procede em parte.</span> O Series X|S usa 8 núcleos Zen 2 customizados. O código do jogo é x86-64 e roda nativo no PC (seção 13.2). As diferenças são poucas instruções: <code>CLZERO</code>, <code>MONITORX/MWAITX</code>, <code>RDPRU</code> e SSE4a (<code>EXTRQ</code>/<code>INSERTQ</code>).</li>
+      <li>Processadores AMD Zen, inclusive os Ryzen "3D" (X3D), executam a maior parte delas direto. Processadores <strong>Intel não têm</strong> várias delas: lá cada uma vira uma exceção tratada pelo <code>console_insn.rs</code>. Funciona, mas cada exceção custa microssegundos. Se aparecerem em laços quentes, isso pesa. Dá para medir pela contagem de instruções emuladas no log.</li>
+      <li>"Abre em todo processador, mas tem falha": é coerente com aproximações como <code>RDPRU</code> (contador do Windows em vez do contador do console) e <code>MONITORX</code> (espera curta em vez da espera de hardware), que podem mudar timeouts do jogo. Precisa de log da máquina que falha para confirmar.</li>
+      <li>"50-50" sobre a memória: o Series X tem 16 GB divididos em 10 GB rápidos e 6 GB mais lentos; o Series S tem 8 GB + 2 GB. É um chip de memória para CPU e GPU, com faixas de velocidade diferentes, e não uma divisão meio a meio entre CPU e GPU.</li>
+      <li>"15 fps": relato de outra máquina, sem log. Não dá para comparar com a RX 550 sem saber a placa, a resolução e a cena.</li>
+    </ul>
+  </section>
+
+  <section id="execucao">
+    <h2>15. Plano de execução detalhado: o que fazer com tudo que foi descoberto</h2>
+    <p>Este é o plano operacional que junta as seções 9 a 14 numa sequência de fases. A seção 12 diz <em>o que</em> atacar, por tamanho de ganho; esta diz <em>como</em>, em que ordem, com qual interruptor, qual medição e qual critério para avançar ou desistir. Regras permanentes: <strong>uma mudança por vez</strong>, todo interruptor nasce desligado, e nenhum ganho é anunciado sem medir na mesma cena.</p>
+
+    <h3>Protocolo de medição (vale para todas as fases)</h3>
+    <ul>
+      <li>Mesma sequência de teclas (<code>GAMBIARRA_KEYS=30:Enter,40:Enter,56:Enter,60:Down,64:Enter,68:Down,72:Enter</code>), 300 s, build <code>diag</code>.</li>
+      <li><code>GAMBIARRA_GPU_TIMING=1</code> + <code>GAMBIARRA_D3D12_DRED=1</code> (sem o segundo, o resumo por comando não sai).</li>
+      <li>Guardar sempre: ms/quadro típico e pior (p50/p95 das linhas <code>fps,</code>), "on the GPU", "preparing", "copying back", VRAM em uso, memória compartilhada, RAM privada, e uma captura (<code>GAMBIARRA_CAPTURE</code>, com <code>GAMBIARRA_CAPTURE_WORLD=1</code> quando a cena 3D importar).</li>
+      <li>Base e teste <strong>no mesmo binário</strong> (a comparação 720p da seção 9 sofreu por não fazer isso).</li>
+      <li>Critério de reversão: piorou p95 ou a imagem, reverte e registra. O estudo guarda também o que falhou.</li>
+    </ul>
+
+    <h3>Fase 0 — Arrumar a casa (sem mexer em desempenho)</h3>
+    <table>
+      <thead><tr><th>Tarefa</th><th>Pronto quando</th></tr></thead>
+      <tbody>
+        <tr><td>Receber o relatório do agente wave64 e registrar o resultado aqui (seção 16, a criar).</td><td>Números dele na tabela; decisão: seguir, pausar ou descartar o merge wave32→64.</td></tr>
+        <tr><td>Mover o 6M para <code>Desktop\SixM</code> e o launcher + jogo para <code>Desktop\MEU JOGO</code>; consertar caminhos absolutos e scripts.</td><td>Build e corrida curta funcionam no caminho novo; git status igual ao de antes.</td></tr>
+        <tr><td>Commitar o trabalho acumulado (RENDER_SIZE, NEUTRAL_PASSES, portes do Belobug, estudo). Hoje <strong>nada está commitado</strong> — um crash de disco perderia tudo.</td><td>Commits pequenos por tema na branch <code>codex/gambiarra-main-synced</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Fase 1 — Enxergar a memória por classe (só medição)</h3>
+    <p><strong>Ideia:</strong> o jogo já marca cada alocação com a intenção (14.2). Hoje a camada ignora essa marca na hora de criar janelas e decidir cópias. Primeiro passo é cruzar as duas coisas.</p>
+    <table>
+      <thead><tr><th>O quê</th><th>Onde</th><th>Como</th></tr></thead>
+      <tbody>
+        <tr><td>Guardar, por região alocada, os bits de proteção (<code>note_protection</code> já os vê e joga fora).</td><td><code>gambiarra-hle/src/modules/xmem.rs</code> → um mapa região→classe consultável pelo <code>gambiarra-gpu</code>.</td><td>Classes: <code>cpu-only</code> (0x4), <code>wc-gpu</code> (0x2404…), <code>shared</code> (0x2004…), <code>desconhecida</code> (0x22004…).</td></tr>
+        <tr><td>Etiquetar as linhas de contabilidade com a classe.</td><td><code>copystat.rs</code> ("memory, windows", cópias, copy-back), <code>shadow.rs</code>.</td><td>Nova linha por quadro: MB de janelas, MB copiados e MB devolvidos <em>por classe</em>.</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Saída da fase:</strong> uma tabela medida "classe × (janelas, cópias/quadro, copy-back/quadro)". Ela decide o tamanho real das fases 2 e 3. Custo estimado: pequeno, nenhum comportamento muda. <strong>Critério para seguir:</strong> as classes cobrem ≥ 90% dos bytes espelhados; se a classe <code>desconhecida</code> dominar, parar e investigar os bits primeiro (GDK público, 14.3.4).</p>
+
+    <h3>Fase 2 — Parar de devolver o que a CPU nunca lê</h3>
+    <p><strong>Hipótese:</strong> em memória write-combined a CPU não lê (o próprio comentário do código diz isso), então os 78 ms de "procurar o que os shaders escreveram" + 33 ms de "devolver" são desperdiçados nas regiões <code>wc-gpu</code>.</p>
+    <ul>
+      <li><strong>Interruptor:</strong> <code>GAMBIARRA_WC_KEEPS=1</code> — regiões <code>wc-gpu</code> ficam fora do <code>EXACT_BACK</code> e da comparação de escritas de shader.</li>
+      <li><strong>Métrica:</strong> "what shaders wrote: finding + putting back" (hoje ~111 ms somados) e ms/quadro total.</li>
+      <li><strong>Critério de sucesso:</strong> essas duas linhas caem na proporção dos bytes <code>wc-gpu</code> medidos na fase 1, imagem igual, sem travar em 300 s.</li>
+      <li><strong>Risco:</strong> o jogo ler via CPU uma região que marcou como WC (faria tudo errado ficar sutil). Mitigação: começar com as regiões onde o write-watch nunca viu leitura... na prática, validar por imagem e pelos contadores de fault do título.</li>
+    </ul>
+
+    <h3>Fase 3 — Morar no lugar certo: cópia principal na VRAM</h3>
+    <p><strong>Hipótese:</strong> buffers <code>wc-gpu</code> que a GPU lê todo quadro devem viver na placa, não em upload heap atravessando o PCIe x8 (~8 GB/s). É o ataque de maior ganho possível: até no degrau "sem shaders" sobram ~6,8 GB compartilhados e 158–345 ms de GPU.</p>
+    <ul>
+      <li><strong>Interruptor:</strong> <code>GAMBIARRA_WC_ON_CARD_MB=&lt;orçamento&gt;</code> — as janelas <code>wc-gpu</code> mais lidas ganham cópia default-heap na placa (a infra de "host copies in the card's memory" em <code>shadow.rs</code>/<code>host.rs</code> já existe, hoje com só 7 cópias/278 MB), alimentada pelo write-watch.</li>
+      <li><strong>Ordem interna:</strong> primeiro as janelas que o log já mostra como mais copiadas ("copied from … x/frame, MB/frame"); depois ampliar o orçamento até a VRAM encostar no limite.</li>
+      <li><strong>Métrica:</strong> memória compartilhada (meta &lt; 3 GB), "on the GPU" no degrau 2 (meta &lt; 200 ms), cópias/quadro.</li>
+      <li><strong>Dependência:</strong> fase 4 precisa abrir espaço na VRAM primeiro, senão a placa já está 176% acima do orçamento.</li>
+      <li><strong>Risco:</strong> duas cópias da mesma memória (RAM + VRAM) dessincronizarem. Mitigação: o write-watch já diz o que a CPU tocou; só subir o que mudou.</li>
+    </ul>
+
+    <h3>Fase 4 — Abrir espaço na VRAM (anda em paralelo com a 1)</h3>
+    <table>
+      <thead><tr><th>Tarefa</th><th>Ganho esperado</th><th>Como medir</th></tr></thead>
+      <tbody>
+        <tr><td>Grade das janelas &lt; 4 MiB (hoje ~1 GB de sobra entre o pedido e o alocado).</td><td>até ~1 GB</td><td>"memory, windows": alocado vs. intervalo pedido.</td></tr>
+        <tr><td>Inventariar os alvos de renderização de tamanho fixo (1.018 MB em 360p): listar por tamanho/formato com <code>GAMBIARRA_DUMP_TARGETS</code>, identificar sombras/sondas/caches e o que encolhe com configuração do título (Series S já reduz).</td><td>centenas de MB</td><td>"memory of textures: host copies the host renders to".</td></tr>
+        <tr><td>Estender <code>GAMBIARRA_TEXTURE_MAX</code> para as texturas que hoje escapam do <code>held_only</code> (nenhuma caiu no caminho nesta cena).</td><td>limitado (texturas do jogo = 245 MB)</td><td>linha do próprio TEXTURE_MAX passar a registrar ação.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Fase 5 — Cache de pipelines que persiste + aquecimento</h3>
+    <ul>
+      <li><strong>Problema medido:</strong> a biblioteca salva 0 MB, então toda execução recompila ~2.400 pipelines; 290–1.635 draws/quadro descartados "without a host pipeline" nos primeiros minutos.</li>
+      <li><strong>Tarefas:</strong> descobrir por que o save grava 0 MB (<code>pipeline/library.rs</code>); rodar <code>gambiarra-cli warm</code> no primeiro boot (é o "preload de shaders" da conversa, feito do jeito do PC — e é o que o GTA V de PC faz no launcher dele).</li>
+      <li><strong>Métrica:</strong> segunda execução com ~0 draws descartados por falta de pipeline; tempo até o menu.</li>
+      <li><strong>Efeito esperado:</strong> carregamento e buracos na imagem, não fps de regime.</li>
+    </ul>
+
+    <h3>Fase 6 — Shaders, só depois da memória</h3>
+    <ul>
+      <li>Aplicar o veredito do wave64 (fase 0) — se o merge wave32→64 der ganho real, ligar por preset nos gathers.</li>
+      <li><code>GAMBIARRA_NEUTRAL_PASSES</code> nos gathers mais caros, agora com nome no timing: medir de novo <em>depois</em> da fase 3, porque com a memória no lugar o custo real de cada shader muda (hoje eles disputam o barramento).</li>
+      <li>Decidir a DLL do FSR (hoje recusada): aceitar a do pacote ou manter o remendo de 8 fases do <code>RENDER_SIZE</code>.</li>
+    </ul>
+
+    <h3>Fase 7 — A RAM do PC (15,9 GB de processo)</h3>
+    <ul>
+      <li>Corrida de 10 minutos para separar platô de vazamento (a curva de compartilhada estabilizou em ~11 GB antes; confirmar para a privada).</li>
+      <li>Revisar: 241 listas nunca resetadas, 1,26 milhão de alocações pequenas (217 MB em blocos &lt; 4 KiB), snapshots (244 MB).</li>
+      <li>As fases 2–3 já derrubam parte disso: menos janelas espelhadas = menos RAM privada.</li>
+    </ul>
+
+    <h3>Resumo em uma linha por fase</h3>
+    <table>
+      <thead><tr><th>Fase</th><th>Em uma frase</th><th>Meta numérica</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>Relatório do wave64, pastas novas, commits.</td><td>—</td></tr>
+        <tr><td>1</td><td>Etiquetar toda a memória espelhada com a classe que o jogo declarou.</td><td>≥ 90% dos bytes classificados</td></tr>
+        <tr><td>2</td><td>Não devolver à CPU o que ela nunca lê.</td><td>"finding+putting back" &lt; 50 ms</td></tr>
+        <tr><td>3</td><td>O que a GPU lê todo quadro mora na placa.</td><td>compartilhada &lt; 3 GB; "on the GPU" &lt; 200 ms no degrau 2</td></tr>
+        <tr><td>4</td><td>Caber no orçamento de VRAM.</td><td>uso ≤ 100% do orçamento</td></tr>
+        <tr><td>5</td><td>Compilar uma vez, lembrar para sempre.</td><td>2ª execução sem draws descartados por pipeline</td></tr>
+        <tr><td>6</td><td>Só então otimizar shaders.</td><td>ganho visível no ms/quadro total</td></tr>
+        <tr><td>7</td><td>Processo abaixo de 10 GB estável.</td><td>platô &lt; 10 GB em 10 min</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><strong>Expectativa honesta.</strong> Se as fases 2–4 cumprirem as metas, o quadro do degrau 2 cai de ~830 para algo entre 300 e 450 ms (2–3 fps na abertura), e o teto da camada (hoje 266–487 ms sem shaders) é o novo alvo a derrubar. Jogável nesta RX 550 de 2 GB continua improvável; o objetivo real é que a <em>camada</em> fique leve o bastante para que, numa placa normal (RDNA2/RTX), o custo seja o do jogo, não o nosso.</div>
+  </section>
+
+  <section id="wave64">
+    <h2>16. Experimento encerrado: juntar dois grupos wave32 numa onda de 64</h2>
+    <p>A hipótese da revisão 1 (seção 6b): os gathers usam grupos de 32 threads e a Polaris só tem ondas de 64, então metade de cada onda fica parada; juntar dois grupos numa onda daria até 2×. O transform foi implementado no tradutor (<code>GAMBIARRA_MERGE_WAVE32=1</code>, desligado por padrão): 190 dos 615 programas de compute do corpus são candidatos e passam no validador, com teste na própria placa provando que o resultado mesclado é idêntico ao normal.</p>
+    <p><strong>Resultado medido no jogo: piorou.</strong> Duas medições A/B no mesmo binário:</p>
+    <table>
+      <thead><tr><th>Medição</th><th>GPU ms/quadro (base)</th><th>GPU ms/quadro (merge)</th><th><code>RaymarchedLocalLights16</code></th></tr></thead>
+      <tbody>
+        <tr><td>b</td><td>1.008–1.180</td><td>1.103–1.600 (picos 3.190)</td><td>258–369 → 585–716 ms</td></tr>
+        <tr><td>c</td><td>904–1.354</td><td>1.167–2.890</td><td>167–309 → 550–984 ms</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Por que (hipótese):</strong> o compilador do console "escalariza" esses shaders: a lista de luzes do tile é varrida com valores uniformes na onda inteira. Com dois tiles por onda, os valores deixam de ser uniformes, o driver passa a fazer cargas vetoriais e divergir, e isso custa mais do que as 32 lanes ociosas custavam. A ociosidade era o mal menor.</p>
+    <p><strong>Decisão:</strong> o flag fica desligado e não entra em preset nenhum. O código permanece (é inerte sem o flag) como registro do experimento. Isso reforça o diagnóstico central: o ganho desta máquina não está nos shaders — está na memória e na camada (seções 9, 10 e 15). Correção visual no mundo não foi verificada, porque as capturas só pegaram telas de carregamento.</p>
+  </section>
+
+  <footer>Estudo complementar: <a href="estudo-via-nvidia.html">Via NVIDIA</a> · Histórico: <a href="archive/estudos-tecnicos-gambiarra.html">Estudos técnicos (arquivado)</a>.</footer>
+</main>
+</body>
+</html>

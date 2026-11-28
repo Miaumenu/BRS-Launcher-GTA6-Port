@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Estudo — via NVIDIA (VIctory-NVIDIA e AconteseNvidia)</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10151d; --panel:#171f2a; --line:#2c3948; --text:#e8edf3; --muted:#aeb9c7; --blue:#77b7ff; --green:#7dd9ab; --yellow:#ffd37b; --red:#ff9696; }
+    * { box-sizing:border-box }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 system-ui,Segoe UI,sans-serif }
+    main { max-width:1080px; margin:auto; padding:32px 22px 70px }
+    h1,h2,h3 { line-height:1.25; letter-spacing:-.02em }
+    h1 { font-size:clamp(2rem,5vw,3.2rem); margin:.25em 0 }
+    h2 { margin-top:2.2em; padding-bottom:.4em; border-bottom:1px solid var(--line) }
+    h3 { margin-top:1.6em }
+    p,li { max-width:82ch }
+    a { color:var(--blue) }
+    code,pre { font-family:ui-monospace,Consolas,monospace }
+    code { overflow-wrap:anywhere; color:#c7e0ff }
+    pre { overflow:auto; background:#0b1016; border:1px solid var(--line); border-radius:10px; padding:16px; color:#d6e4f4 }
+    .kicker { color:var(--green); font-weight:700; text-transform:uppercase; letter-spacing:.12em; font-size:.78rem }
+    .meta,.muted { color:var(--muted) }
+    .callout { background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--blue); border-radius:10px; padding:16px 18px; margin:20px 0 }
+    .callout.good { border-left-color:var(--green) }
+    .callout.caution { border-left-color:var(--yellow) }
+    .callout.unknown { border-left-color:var(--red) }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
+    .card h3 { margin:.15em 0 .5em }
+    table { width:100%; border-collapse:collapse; margin:16px 0; display:block; overflow-x:auto }
+    th,td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:10px 12px; min-width:130px }
+    th { background:#1c2734 }
+    .yes { color:var(--green); font-weight:700 } .no { color:var(--red); font-weight:700 } .maybe { color:var(--yellow); font-weight:700 }
+    .authorship { border:1px solid #2e6b52; border-left:5px solid var(--green); background:#132820; color:#d9f7e9; border-radius:10px; padding:15px 18px; margin:20px 0 }
+    nav ul { columns:2; padding-left:1.2em }
+    footer { margin-top:3em; padding-top:1em; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem }
+    @media (max-width:600px) { main { padding:22px 15px 50px } nav ul { columns:1 } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">GambiarraLauncher · estudo comparativo</div>
+    <h1>Via NVIDIA: o que funciona nas placas RTX e o que dá para trazer</h1>
+    <p class="meta">Revisão 1 · 28/11/2026 · análise do código-fonte público, sem executar binários</p>
+    <aside class="authorship"><strong>Trabalho desta IA — Claude.</strong> Escrito a pedido do usuário. Fontes lidas pela API pública do GitHub (metadados, notas de release e arquivos de código); nenhum pacote foi baixado nem executado, e nada do título foi distribuído ou copiado.</aside>
+    <div class="callout good"><strong>Resumo executivo.</strong> O AconteseNvidia é um fork do VIctory-NVIDIA, a mesma base de onde o GambiarraLauncher veio, com o mesmo desenho de crates. Ele roda bem porque a GPU RTX executa em hardware o que falta na nossa Radeon RX 550: mesh shaders, ondas de 32 lanes, rasterização conservadora, baricêntricas no pixel shader e 8 GB ou mais de VRAM, além de DLSS e geração de quadros. Esses recursos não se transferem para a nossa placa. O que se transfere é <em>software</em>: a junção de execuções indiretas, o pacote da thread de envio, o preparo de shaders antes de jogar e o pulo de vídeos. A licença é GPL-3.0, compatível com a nossa, e permite portar código com crédito.</div>
+  </header>
+
+  <nav class="card" aria-label="Índice">
+    <strong>Nesta página</strong>
+    <ul>
+      <li><a href="#origem">Origem, licença e versões</a></li>
+      <li><a href="#porque">Por que roda bem em RTX</a></li>
+      <li><a href="#componentes">Componentes técnicos</a></li>
+      <li><a href="#portar">O que portar, e em que ordem</a></li>
+      <li><a href="#limites">Limites desta análise</a></li>
+      <li><a href="#fontes">Fontes</a></li>
+    </ul>
+  </nav>
+
+  <section id="origem">
+    <h2>1. Origem, licença e versões</h2>
+    <table>
+      <thead><tr><th>Repositório</th><th>Papel</th><th>Dados públicos (28/11/2026)</th></tr></thead>
+      <tbody>
+        <tr><td><code>trustno1-coder/VIctory-NVIDIA</code></td><td>Upstream da via NVIDIA: camada de compatibilidade ajustada para RTX, "construída combinando muitos repositórios".</td><td>~4.431 estrelas. Declara Series X em 2560×1440 com DLSS, cerca de 26–30 fps numa RTX 5070, geração de quadros de 2× a 6×, menu F1, painel F3 e "água aberta sem blocos escuros".</td></tr>
+        <tr><td><code>Rafa23xz/AconteseNvidia</code></td><td>Fork com launcher nativo: instalação guiada, DLSS e geração de quadros oficiais, preparo de shaders, atualização assinada.</td><td>Releases de v0.2.0 a v0.2.4, todas de 28/11/2026, com zips de ~4,7 MB (launcher + <code>engine\victory.exe</code>). Exige Windows 11, GPU NVIDIA RTX e o título na versão 1.0.2.1 para Xbox Series.</td></tr>
+        <tr><td><code>CuteBooty/victory-8gb</code></td><td>Fork ajustado ao modo Series S em placas NVIDIA de 8 GB e CPUs mais antigas.</td><td>Somente código-fonte, GPL-3.0-or-later. É a referência mais próxima de "hardware limitado" no ecossistema.</td></tr>
+        <tr><td><code>Belobug/VIctory-Belobug-AMD</code></td><td>Fork AMD citado no README do AconteseNvidia.</td><td>Indisponível (HTTP 404). Não foi possível avaliar.</td></tr>
+      </tbody>
+    </table>
+    <p>A licença do AconteseNvidia é a <strong>GNU GPL v3</strong>, a mesma do GambiarraLauncher. Portar trechos exige manter o aviso de licença e o crédito dos autores. Os próprios arquivos deles já registram crédito em cadeia (por exemplo, <code>bink.rs</code> credita C-GDev e o fork victory-8gb; <code>fidelityfx.rs</code> credita o fork DexNom/VIctory).</p>
+  </section>
+
+  <section id="porque">
+    <h2>2. Por que roda bem em RTX</h2>
+    <p>A tabela compara os recursos que o título usa com o que cada placa oferece. Os valores da RX 550 foram medidos neste projeto; os da RTX são características conhecidas da arquitetura Turing ou mais nova.</p>
+    <table>
+      <thead><tr><th>Recurso que o título usa</th><th>GPU RTX (Turing+)</th><th>Radeon RX 550 (Polaris)</th><th>Consequência na RX 550</th></tr></thead>
+      <tbody>
+        <tr><td>Mesh shaders (35% dos shaders; quase toda a geometria do mundo)</td><td class="yes">Sim</td><td class="no">Não</td><td>Sem emulação, o mundo não é desenhado. Hoje há uma emulação nossa via compute.</td></tr>
+        <tr><td>Ondas de 32 lanes (<code>WaveSize(32)</code>)</td><td class="yes">Sim</td><td class="no">Só 64</td><td>Um shader de compute recusado (<code>E_INVALIDARG</code>).</td></tr>
+        <tr><td>Rasterização conservadora</td><td class="yes">Sim</td><td class="no">Não</td><td>Pipelines recusados; hoje desligamos o recurso nesses passes (resultado aproximado).</td></tr>
+        <tr><td><code>SV_Barycentrics</code> no pixel shader</td><td class="yes">Sim</td><td class="no">Não</td><td>Cerca de 400 draws/quadro descartados.</td></tr>
+        <tr><td>Memória de vídeo</td><td>8 a 16 GB</td><td>2 GB (orçamento ~1,7 GB)</td><td>A cena pede ~3 GB; o excedente vai para a RAM e a cópia por quadro vira gargalo.</td></tr>
+        <tr><td>Upscaling e geração de quadros</td><td>DLSS + Frame Generation</td><td>—</td><td>Sem equivalente útil a 0,6–0,9 fps.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout caution"><strong>Conclusão.</strong> A diferença entre "roda bem na NVIDIA" e "mal roda na RX 550" é sobretudo de hardware. Nenhum ajuste de software fará uma placa Polaris de 2 GB alcançar números de uma RTX 5070. O objetivo realista para a nossa máquina é <em>chegar ao jogo com estabilidade em qualidade mínima</em>, não igualar a via NVIDIA.</div>
+  </section>
+
+  <section id="componentes">
+    <h2>3. Componentes técnicos deles que não temos</h2>
+    <p>Comparação arquivo a arquivo entre os crates <code>victory-gpu</code>, <code>victory-hle</code>, <code>victory-shader</code> e <code>victory-pipeline</code> deles e os nossos <code>gambiarra-*</code>.</p>
+    <table>
+      <thead><tr><th>Arquivo deles</th><th>O que faz</th><th>Serve na RX 550?</th></tr></thead>
+      <tbody>
+        <tr><td><code>gpu/src/indirect/merge.rs</code> (389 linhas)</td><td>Junta uma sequência de <code>ExecuteIndirect</code> de um registro, sem nada entre eles, num só, de vários registros. Liga com <code>VICTORY_INDIRECT_MERGE=1</code>; os contadores rodam mesmo desligado.</td><td class="yes">Sim, prioridade 1. Nosso gargalo é a gravação de comandos na CPU (~5 s/quadro) e o título faz ~1.500 execuções indiretas por quadro.</td></tr>
+        <tr><td>Pacote da thread de envio (<code>VICTORY_LAND_ASIDE</code>, <code>VICTORY_PRELUDE_AHEAD</code>, <code>VICTORY_LIST_CLOSED_POOL</code>)</td><td>Tira da thread de envio o reset e a devolução de listas, o prelúdio e o fechamento de listas.</td><td class="yes">Sim, prioridade 2. Temos <code>GAMBIARRA_THIN</code> e <code>GAMBIARRA_ASYNC_SUBMIT</code>, mas não estes três.</td></tr>
+        <tr><td><code>pipeline/src/cache.rs</code> + "preparo dos shaders" do launcher</td><td>Converte e guarda os shaders antes de jogar, com porcentagem e tempo restante; o preparo vale enquanto o tradutor não muda.</td><td class="yes">Sim, prioridade 3. Elimina os ~640 draws/quadro perdidos com pipelines "sendo compilados" na primeira execução.</td></tr>
+        <tr><td><code>hle/src/modules/bink.rs</code> (<code>VICTORY_SKIP_BINK</code>)</td><td>Mantém a DLL Bink do título, mas faz os vídeos que não repetem (logos, introduções) terminarem no primeiro quadro.</td><td class="yes">Sim. Agiliza cada teste e economiza memória no boot.</td></tr>
+        <tr><td><code>hle/src/modules/fidelityfx.rs</code></td><td>Camada na frente do FidelityFX do título: deixa a DLL original fazer tudo e só desvia o upscale quando o DLSS está ligado.</td><td class="maybe">Parcial. Confirma a abordagem que adotamos (DLL real do título). O desvio para DLSS não se aplica.</td></tr>
+        <tr><td><code>gpu/src/streamline/</code> (<code>abi.rs</code>, <code>plan.rs</code>)</td><td>DLSS e DLSS Frame Generation via NVIDIA Streamline.</td><td class="no">Não. Exclusivo NVIDIA.</td></tr>
+        <tr><td><code>gpu/src/streamline/fsr.rs</code></td><td>Geração de quadros FSR 3 (FidelityFX SDK da AMD) para placas onde o DLSS FG não roda; usa as DLLs assinadas da AMD numa pasta do usuário.</td><td class="maybe">Depois. Precisa do upscaling do título rodando e de base estável. A 0,6 fps, gerar quadros não ajuda.</td></tr>
+        <tr><td><code>gpu/src/host/two_queues.rs</code></td><td>Somente plano: mede o que uma segunda fila (compute assíncrono) teria de esperar. Tudo continua numa fila só.</td><td class="maybe">Baixa prioridade. Diagnóstico, não ganho direto.</td></tr>
+        <tr><td><code>gpu/src/host/menu.rs</code>, <code>font.rs</code></td><td>Menu F1 de configurações e painel F3 de números dentro do jogo.</td><td class="maybe">Útil para medir sem log, mas não resolve desempenho.</td></tr>
+        <tr><td><code>gpu/src/heap_marks.rs</code>, <code>port.rs</code>, <code>external.rs</code></td><td>Infraestrutura interna da via NVIDIA (marcas no heap de descritores, portabilidade, integração externa).</td><td class="maybe">A avaliar caso a caso.</td></tr>
+        <tr><td><code>hle/src/modules/gameinput/dualsense.rs</code>, <code>dsp/convolve.rs</code></td><td>Controle DualSense e convolução de áudio.</td><td class="maybe">Não afeta o problema atual.</td></tr>
+      </tbody>
+    </table>
+    <p>No sentido contrário, temos o que eles não têm: a emulação de mesh shaders via compute (<code>gpu/src/mesh.rs</code>, <code>shader/src/emit/mesh_reader.rs</code>) e o carregamento do Agility SDK no Windows 10 (<code>gpu/src/agility.rs</code>). Como a via deles exige RTX, eles não precisam disso.</p>
+  </section>
+
+  <section id="portar">
+    <h2>4. O que portar, e em que ordem</h2>
+    <table>
+      <thead><tr><th>Ordem</th><th>Item</th><th>Por que agora</th><th>Como medir o ganho</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Junção de execuções indiretas (<code>merge.rs</code>)</td><td>Ataca o maior custo medido: CPU gravando dezenas de milhares de chamadas por quadro.</td><td>Linha <code>recording per frame</code>: chamadas e milissegundos antes e depois, mesma cena.</td></tr>
+        <tr><td>2</td><td>Pacote da thread de envio</td><td>Reduz o tempo da thread que entrega o trabalho à GPU.</td><td>Linha <code>submissions sent ahead</code> e ms/quadro.</td></tr>
+        <tr><td>3</td><td>Preparo de shaders antes de jogar</td><td>A primeira execução perde ~640 draws/quadro esperando compilação.</td><td>Contador <code>being made</code> e <code>dropped … without a host pipeline</code>.</td></tr>
+        <tr><td>4</td><td>Pular vídeos Bink</td><td>Ciclo de teste mais curto e menos memória no boot.</td><td>Tempo até a tela inicial.</td></tr>
+        <tr><td>5</td><td>Comparar correções de renderização do upstream</td><td>"Água sem blocos escuros" e afins podem ter relação com a nossa cena preta.</td><td>Captura do mesmo quadro antes e depois.</td></tr>
+      </tbody>
+    </table>
+    <p>Todo porte deve citar o arquivo de origem e o autor no comentário do módulo, como os próprios arquivos deles fazem, e passar pela política de assets do projeto (<code>cargo xtask policy</code>).</p>
+  </section>
+
+  <section id="limites">
+    <h2>5. Limites desta análise</h2>
+    <ul>
+      <li>A análise foi de código e notas de release. Nenhum binário deles foi executado, então números de desempenho deles são os que eles declaram, não medidos aqui.</li>
+      <li>"Roda bem" se refere a placas RTX. Não há medição pública da via NVIDIA em placas de 2 GB.</li>
+      <li>O fork AMD citado (Belobug) está indisponível; não foi possível verificar o relato de que "no AMD funciona para algumas pessoas".</li>
+      <li>Código de interposição e de envio depende do desenho interno de cada fork; portar exige adaptar aos nossos nomes e ao nosso estado (por exemplo, <code>draw.rs</code>, <code>list.rs</code>, <code>queue.rs</code>).</li>
+    </ul>
+  </section>
+
+  <section id="fontes">
+    <h2>6. Fontes</h2>
+    <ul>
+      <li><a href="https://github.com/Rafa23xz/AconteseNvidia/releases">Rafa23xz/AconteseNvidia — Releases</a> (v0.2.0 a v0.2.4) e branch <code>acontese-nvidia</code>.</li>
+      <li><a href="https://github.com/trustno1-coder/VIctory-NVIDIA">trustno1-coder/VIctory-NVIDIA</a> — descrição do upstream.</li>
+      <li><a href="https://github.com/CuteBooty/victory-8gb">CuteBooty/victory-8gb</a> — fork para 8 GB e Series S.</li>
+      <li>Arquivos lidos: <code>crates/victory-gpu/src/indirect/merge.rs</code>, <code>crates/victory-gpu/src/streamline/fsr.rs</code>, <code>crates/victory-gpu/src/host/two_queues.rs</code>, <code>crates/victory-pipeline/src/cache.rs</code>, <code>crates/victory-hle/src/modules/fidelityfx.rs</code>, <code>crates/victory-hle/src/modules/bink.rs</code>, <code>README.md</code>, <code>LICENSE</code>.</li>
+    </ul>
+  </section>
+  <footer>Estudo principal: <a href="estudo-via-amd-rx550.html">Via AMD (RX 550)</a> · Histórico: <a href="archive/estudos-tecnicos-gambiarra.html">Estudos técnicos (arquivado)</a>.</footer>
+</main>
+</body>
+</html>
